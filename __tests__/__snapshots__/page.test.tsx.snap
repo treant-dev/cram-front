@@ -1,0 +1,220 @@
+// Jest Snapshot v1, https://jestjs.io/docs/snapshot-testing
+
+exports[`HomePage matches snapshot 1`] = `
+{
+  "asFragment": [Function],
+  "baseElement": <body>
+    <div>
+      <div
+        class="min-h-screen flex flex-col items-center justify-center bg-gray-50 dark:bg-gray-900 px-4"
+      >
+        <h1
+          class="text-4xl font-semibold text-gray-800 dark:text-white tracking-wide mb-10 text-center space-x-4"
+        >
+          <span>
+            Learn 📘
+          </span>
+          <span>
+            Pass ✅
+          </span>
+          <span>
+            Grow 🚀
+          </span>
+        </h1>
+        <ul
+          class="mt-8 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6"
+        >
+          <li
+            class="flex items-center gap-4 bg-white dark:bg-gray-800 p-4 rounded-xl shadow-md"
+          >
+            <img
+              alt="Google logo"
+              class="h-10 w-10"
+              src="https://www.svgrepo.com/show/475656/google-color.svg"
+            />
+            <span
+              class="text-lg font-medium text-gray-800 dark:text-white"
+            >
+              Google
+            </span>
+          </li>
+          <li
+            class="flex items-center gap-4 bg-white dark:bg-gray-800 p-4 rounded-xl shadow-md"
+          >
+            <img
+              alt="AWS logo"
+              class="h-10 w-10"
+              src="https://www.svgrepo.com/show/448266/aws.svg"
+            />
+            <span
+              class="text-lg font-medium text-gray-800 dark:text-white"
+            >
+              AWS
+            </span>
+          </li>
+          <li
+            class="flex items-center gap-4 bg-white dark:bg-gray-800 p-4 rounded-xl shadow-md"
+          >
+            <img
+              alt="K8s logo"
+              class="h-10 w-10"
+              src="https://raw.githubusercontent.com/kubernetes/kubernetes/master/logo/logo.png"
+            />
+            <span
+              class="text-lg font-medium text-gray-800 dark:text-white"
+            >
+              K8s
+            </span>
+          </li>
+        </ul>
+        <div
+          class="mt-12"
+        >
+          <button
+            class="flex items-center gap-2 bg-slate-600 hover:bg-slate-700 transition-colors px-4 py-2 rounded text-white font-medium"
+            type="button"
+          >
+            <img
+              alt="GitHub logo"
+              class="h-5 w-5"
+              src="https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png"
+            />
+            Sign In With GitHub
+          </button>
+        </div>
+      </div>
+    </div>
+  </body>,
+  "container": <div>
+    <div
+      class="min-h-screen flex flex-col items-center justify-center bg-gray-50 dark:bg-gray-900 px-4"
+    >
+      <h1
+        class="text-4xl font-semibold text-gray-800 dark:text-white tracking-wide mb-10 text-center space-x-4"
+      >
+        <span>
+          Learn 📘
+        </span>
+        <span>
+          Pass ✅
+        </span>
+        <span>
+          Grow 🚀
+        </span>
+      </h1>
+      <ul
+        class="mt-8 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6"
+      >
+        <li
+          class="flex items-center gap-4 bg-white dark:bg-gray-800 p-4 rounded-xl shadow-md"
+        >
+          <img
+            alt="Google logo"
+            class="h-10 w-10"
+            src="https://www.svgrepo.com/show/475656/google-color.svg"
+          />
+          <span
+            class="text-lg font-medium text-gray-800 dark:text-white"
+          >
+            Google
+          </span>
+        </li>
+        <li
+          class="flex items-center gap-4 bg-white dark:bg-gray-800 p-4 rounded-xl shadow-md"
+        >
+          <img
+            alt="AWS logo"
+            class="h-10 w-10"
+            src="https://www.svgrepo.com/show/448266/aws.svg"
+          />
+          <span
+            class="text-lg font-medium text-gray-800 dark:text-white"
+          >
+            AWS
+          </span>
+        </li>
+        <li
+          class="flex items-center gap-4 bg-white dark:bg-gray-800 p-4 rounded-xl shadow-md"
+        >
+          <img
+            alt="K8s logo"
+            class="h-10 w-10"
+            src="https://raw.githubusercontent.com/kubernetes/kubernetes/master/logo/logo.png"
+          />
+          <span
+            class="text-lg font-medium text-gray-800 dark:text-white"
+          >
+            K8s
+          </span>
+        </li>
+      </ul>
+      <div
+        class="mt-12"
+      >
+        <button
+          class="flex items-center gap-2 bg-slate-600 hover:bg-slate-700 transition-colors px-4 py-2 rounded text-white font-medium"
+          type="button"
+        >
+          <img
+            alt="GitHub logo"
+            class="h-5 w-5"
+            src="https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png"
+          />
+          Sign In With GitHub
+        </button>
+      </div>
+    </div>
+  </div>,
+  "debug": [Function],
+  "findAllByAltText": [Function],
+  "findAllByDisplayValue": [Function],
+  "findAllByLabelText": [Function],
+  "findAllByPlaceholderText": [Function],
+  "findAllByRole": [Function],
+  "findAllByTestId": [Function],
+  "findAllByText": [Function],
+  "findAllByTitle": [Function],
+  "findByAltText": [Function],
+  "findByDisplayValue": [Function],
+  "findByLabelText": [Function],
+  "findByPlaceholderText": [Function],
+  "findByRole": [Function],
+  "findByTestId": [Function],
+  "findByText": [Function],
+  "findByTitle": [Function],
+  "getAllByAltText": [Function],
+  "getAllByDisplayValue": [Function],
+  "getAllByLabelText": [Function],
+  "getAllByPlaceholderText": [Function],
+  "getAllByRole": [Function],
+  "getAllByTestId": [Function],
+  "getAllByText": [Function],
+  "getAllByTitle": [Function],
+  "getByAltText": [Function],
+  "getByDisplayValue": [Function],
+  "getByLabelText": [Function],
+  "getByPlaceholderText": [Function],
+  "getByRole": [Function],
+  "getByTestId": [Function],
+  "getByText": [Function],
+  "getByTitle": [Function],
+  "queryAllByAltText": [Function],
+  "queryAllByDisplayValue": [Function],
+  "queryAllByLabelText": [Function],
+  "queryAllByPlaceholderText": [Function],
+  "queryAllByRole": [Function],
+  "queryAllByTestId": [Function],
+  "queryAllByText": [Function],
+  "queryAllByTitle": [Function],
+  "queryByAltText": [Function],
+  "queryByDisplayValue": [Function],
+  "queryByLabelText": [Function],
+  "queryByPlaceholderText": [Function],
+  "queryByRole": [Function],
+  "queryByTestId": [Function],
+  "queryByText": [Function],
+  "queryByTitle": [Function],
+  "rerender": [Function],
+  "unmount": [Function],
+}
+`;
