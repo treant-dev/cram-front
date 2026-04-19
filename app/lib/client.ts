@@ -1,4 +1,4 @@
-import axios from "axios";
+import axios, { AxiosResponse } from "axios";
 import { User } from "./types";
 
 const api = axios.create({
@@ -6,7 +6,7 @@ const api = axios.create({
   withCredentials: true, // 👈 важно — отправляет куки
 });
 
-export const getUserInfo = async (): Promise<User>  => {
+export const getUserInfo = async (): Promise<AxiosResponse<User>>  => {
    return api.get("/me");
 }
 
