@@ -82,12 +82,11 @@ export default function CardsTestPage(props: PageProps<"/sets/[id]/cards-test">)
       <Navbar />
       <main className="flex-1 flex flex-col items-center justify-center px-4">
         <div className="w-full max-w-lg flex flex-col gap-5">
-          <div className="flex items-center justify-between">
+          <div className="relative flex items-center justify-between">
             <p className="text-sm text-gray-400">{index + 1} / {items.length}</p>
+            <p className="absolute left-1/2 -translate-x-1/2 text-xs text-gray-400 uppercase tracking-wide">Front</p>
             <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">Single answer</span>
           </div>
-
-          <p className="text-xs text-gray-400 uppercase tracking-wide text-center">Front</p>
           <div className="bg-white border border-gray-200 rounded-2xl p-6 text-center shadow-sm">
             <p className="text-xl font-semibold text-gray-900">{item.card.Question}</p>
           </div>
