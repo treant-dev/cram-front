@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { api, TestQuestion } from "@/lib/api";
 import { isLoggedIn } from "@/lib/auth";
 import Navbar from "@/components/Navbar";
@@ -25,6 +24,12 @@ export default function TestPage(props: PageProps<"/sets/[id]/test">) {
       return api.sets.get(id);
     }).then((s) => setQuestions([...(s.TestQuestions ?? [])].sort(() => Math.random() - 0.5)));
   }, [router, props.params]);
+
+  useEffect(() => {
+    if (!done || !setID) return;
+    const t = setTimeout(() => router.replace(`/sets/${setID}`), 1700);
+    return () => clearTimeout(t);
+  }, [done, setID, router]);
 
   const q = questions[index];
   const correctAnswers = q ? new Set(q.Options.filter((o) => o.is_correct).map((o) => o.text)) : new Set<string>();
@@ -78,11 +83,7 @@ export default function TestPage(props: PageProps<"/sets/[id]/test">) {
         <div className="flex-1 flex flex-col items-center justify-center gap-4 text-center px-4">
           <h2 className="text-2xl font-bold">Test complete!</h2>
           <p className="text-gray-500 text-lg">{score} / {questions.length} correct</p>
-          <div className="flex gap-3 mt-2">
-            <button onClick={() => { setIndex(0); setSelected(new Set()); setSubmitted(false); setScore(0); setDone(false); setQuestions([...questions].sort(() => Math.random() - 0.5)); }}
-              className="bg-indigo-600 text-white px-5 py-2 rounded-lg font-medium hover:bg-indigo-700">Retry</button>
-            <Link href={`/sets/${setID}`} className="border border-gray-300 px-5 py-2 rounded-lg text-gray-600 hover:bg-gray-50">Back to set</Link>
-          </div>
+          <p className="text-gray-400 text-sm">Returning to set…</p>
         </div>
       </div>
     );

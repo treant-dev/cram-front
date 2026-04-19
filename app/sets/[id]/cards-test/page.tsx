@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { api } from "@/lib/api";
 import { isLoggedIn } from "@/lib/auth";
 import { buildCardTestItem, CardTestItem } from "@/lib/quiz";
@@ -29,6 +28,12 @@ export default function CardsTestPage(props: PageProps<"/sets/[id]/cards-test">)
       setItems(cards.map((c) => buildCardTestItem(c, cards)).sort(() => Math.random() - 0.5));
     });
   }, [router, props.params]);
+
+  useEffect(() => {
+    if (!done || !setID) return;
+    const t = setTimeout(() => router.replace(`/sets/${setID}`), 1700);
+    return () => clearTimeout(t);
+  }, [done, setID, router]);
 
   const item = items[index];
 
@@ -66,14 +71,7 @@ export default function CardsTestPage(props: PageProps<"/sets/[id]/cards-test">)
         <div className="flex-1 flex flex-col items-center justify-center gap-4 text-center px-4">
           <h2 className="text-2xl font-bold">Done!</h2>
           <p className="text-gray-500 text-lg">{score} / {items.length} correct</p>
-          <div className="flex gap-3 mt-2">
-            <button onClick={() => {
-              const cards = items.map((i) => i.card);
-              setIndex(0); setSelected(null); setSubmitted(false); setScore(0); setDone(false);
-              setItems(cards.map((c) => buildCardTestItem(c, cards)).sort(() => Math.random() - 0.5));
-            }} className="bg-indigo-600 text-white px-5 py-2 rounded-lg font-medium hover:bg-indigo-700">Retry</button>
-            <Link href={`/sets/${setID}`} className="border border-gray-300 px-5 py-2 rounded-lg text-gray-600 hover:bg-gray-50">Back to set</Link>
-          </div>
+          <p className="text-gray-400 text-sm">Returning to set…</p>
         </div>
       </div>
     );
@@ -89,8 +87,8 @@ export default function CardsTestPage(props: PageProps<"/sets/[id]/cards-test">)
             <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">Single answer</span>
           </div>
 
+          <p className="text-xs text-gray-400 uppercase tracking-wide text-center">Front</p>
           <div className="bg-white border border-gray-200 rounded-2xl p-6 text-center shadow-sm">
-            <p className="text-xs text-gray-400 uppercase tracking-wide mb-2">Front</p>
             <p className="text-xl font-semibold text-gray-900">{item.card.Question}</p>
           </div>
 
