@@ -1,40 +1,55 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
 import OptionButton from "@/components/OptionButton";
+import { api, type StudyAnswer } from "@/lib/api";
 import type { SessionItem } from "@/lib/session";
 
 type Props = {
   items: SessionItem[];
-  setID: string;
+  collectionID: string;
   doneTitle: string;
+  error?: string;
 };
 
-export default function StudySession({ items, setID, doneTitle }: Props) {
+export default function StudySession({ items, collectionID, doneTitle, error }: Props) {
   const router = useRouter();
+  const sessionID = useMemo(() => crypto.randomUUID(), []);
   const [index, setIndex] = useState(0);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [submitted, setSubmitted] = useState(false);
   const [score, setScore] = useState(0);
   const [done, setDone] = useState(false);
+  const [results, setResults] = useState<StudyAnswer[]>([]);
 
   useEffect(() => {
-    if (!done || !setID) return;
-    const t = setTimeout(() => router.replace(`/sets/${setID}`), 1700);
+    if (!done || !collectionID) return;
+    if (results.length > 0) {
+      api.study.submit(collectionID, sessionID, results).catch(() => {});
+    }
+    const t = setTimeout(() => router.replace(`/collections/${collectionID}`), 1700);
     return () => clearTimeout(t);
-  }, [done, setID, router]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [done, collectionID]);
 
   const item = items[index];
 
   const submit = useCallback(() => {
     if (submitted || selected.size === 0 || !item) return;
-    const correct = new Set(item.options.filter((o) => o.isCorrect).map((o) => o.text));
+    const correctSet = new Set(item.options.filter((o) => o.isCorrect).map((o) => o.text));
+    const isCorrect = selected.size === correctSet.size && [...selected].every((s) => correctSet.has(s));
     setSubmitted(true);
-    if (selected.size === correct.size && [...selected].every((s) => correct.has(s))) {
-      setScore((sc) => sc + 1);
-    }
+    if (isCorrect) setScore((sc) => sc + 1);
+    setResults((prev) => [
+      ...prev,
+      {
+        card_id: item.sourceType === "card" ? item.sourceID : undefined,
+        tq_id: item.sourceType === "tq" ? item.sourceID : undefined,
+        correct: isCorrect,
+      },
+    ]);
   }, [submitted, selected, item]);
 
   const next = useCallback(() => {
@@ -69,8 +84,33 @@ export default function StudySession({ items, setID, doneTitle }: Props) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [item, submitted, selected, submit, next]);
 
+  if (error) {
+    return (
+      <div className="min-h-screen flex flex-col">
+        <Navbar />
+        <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center px-4">
+          <p className="text-red-500">{error}</p>
+          <button onClick={() => window.history.back()} className="text-sm text-indigo-600 dark:text-indigo-400 hover:underline">Go back</button>
+        </div>
+      </div>
+    );
+  }
+
   if (items.length === 0) {
-    return <div className="min-h-screen flex items-center justify-center text-gray-400">Loading…</div>;
+    return (
+      <div className="min-h-screen flex flex-col">
+        <Navbar />
+        <main className="flex-1 flex flex-col items-center justify-center px-4">
+          <div className="w-full max-w-lg flex flex-col gap-5 animate-pulse">
+            <div className="h-4 bg-gray-200 dark:bg-slate-800 rounded w-20" />
+            <div className="bg-gray-100 dark:bg-slate-800 rounded-2xl h-32" />
+            <div className="flex flex-col gap-2">
+              {[0, 1, 2, 3].map((i) => <div key={i} className="h-12 bg-gray-100 dark:bg-slate-800 rounded-xl" />)}
+            </div>
+          </div>
+        </main>
+      </div>
+    );
   }
 
   if (done) {
@@ -79,8 +119,8 @@ export default function StudySession({ items, setID, doneTitle }: Props) {
         <Navbar />
         <div className="flex-1 flex flex-col items-center justify-center gap-4 text-center px-4">
           <h2 className="text-2xl font-bold">{doneTitle}</h2>
-          <p className="text-gray-500 text-lg">{score} / {items.length} correct</p>
-          <p className="text-gray-400 text-sm">Returning to set…</p>
+          <p className="text-gray-500 dark:text-slate-400 text-lg">{score} / {items.length} correct</p>
+          <p className="text-gray-400 dark:text-slate-500 text-sm">Returning to collection…</p>
         </div>
       </div>
     );
@@ -92,17 +132,17 @@ export default function StudySession({ items, setID, doneTitle }: Props) {
       <main className="flex-1 flex flex-col items-center justify-center px-4">
         <div className="w-full max-w-lg flex flex-col gap-5">
           <div className="relative flex items-center justify-between">
-            <p className="text-sm text-gray-400">{index + 1} / {items.length}</p>
+            <p className="text-sm text-gray-400 dark:text-slate-500">{index + 1} / {items.length}</p>
             {item.frontLabel && (
-              <p className="absolute left-1/2 -translate-x-1/2 text-xs text-gray-400 uppercase tracking-wide">Front</p>
+              <p className="absolute left-1/2 -translate-x-1/2 text-xs text-gray-400 dark:text-slate-500 uppercase tracking-wide">Front</p>
             )}
             <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${item.badge.className}`}>
               {item.badge.text}
             </span>
           </div>
 
-          <div className="bg-white border border-gray-200 rounded-2xl p-6 text-center shadow-sm">
-            <p className="text-xl font-semibold text-gray-900">{item.question}</p>
+          <div className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-2xl p-6 text-center shadow-sm">
+            <p className="text-xl font-semibold text-gray-900 dark:text-slate-100">{item.question}</p>
           </div>
 
           <div className="flex flex-col gap-2">
@@ -121,10 +161,10 @@ export default function StudySession({ items, setID, doneTitle }: Props) {
           </div>
 
           <div className="flex items-center justify-between">
-            <p className="text-xs text-gray-400">Press 1–{item.options.length} to select · Enter to confirm</p>
+            <p className="text-xs text-gray-400 dark:text-slate-500">Press 1–{item.options.length} to select · Enter to confirm</p>
             <div className="flex gap-2">
               {!submitted && selected.size > 0 && (
-                <button onClick={submit} className="border border-indigo-400 text-indigo-600 px-5 py-2 rounded-xl font-medium hover:bg-indigo-50 transition-colors">
+                <button onClick={submit} className="border border-indigo-400 dark:border-indigo-600 text-indigo-600 dark:text-indigo-400 px-5 py-2 rounded-xl font-medium hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-colors">
                   Confirm
                 </button>
               )}

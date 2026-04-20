@@ -5,23 +5,25 @@ import { useRouter } from "next/navigation";
 import { isLoggedIn } from "@/lib/auth";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
+const DEV_MODE = process.env.NEXT_PUBLIC_DEV_MODE === "true";
 
 export default function LandingPage() {
   const router = useRouter();
 
   useEffect(() => {
-    if (isLoggedIn()) router.replace("/sets");
+    if (isLoggedIn()) router.replace("/collections");
   }, [router]);
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center gap-8 px-4">
       <div className="text-center">
-        <h1 className="text-5xl font-bold text-indigo-600 mb-3">Cram</h1>
-        <p className="text-gray-500 text-lg">Study smarter with flashcards</p>
+        <h1 className="text-5xl font-bold text-indigo-600 dark:text-indigo-400 mb-3">Cram</h1>
+        <p className="text-gray-500 dark:text-slate-400 text-lg">Study smarter with flashcards</p>
       </div>
+
       <a
         href={`${API}/auth/google`}
-        className="flex items-center gap-3 bg-white border border-gray-300 shadow-sm rounded-lg px-6 py-3 text-gray-700 font-medium hover:bg-gray-50 transition-colors"
+        className="flex items-center gap-3 bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 shadow-sm rounded-lg px-6 py-3 text-gray-700 dark:text-slate-200 font-medium hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors"
       >
         <svg className="w-5 h-5" viewBox="0 0 24 24">
           <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
@@ -31,6 +33,26 @@ export default function LandingPage() {
         </svg>
         Continue with Google
       </a>
+
+      {DEV_MODE && (
+        <div className="flex flex-col items-center gap-2">
+          <p className="text-xs text-gray-400 dark:text-slate-600 uppercase tracking-widest">Test environment</p>
+          <div className="flex gap-3">
+            <a
+              href={`${API}/auth/dev-login`}
+              className="px-4 py-2 rounded-lg text-sm font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-600 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+            >
+              Login as Test User
+            </a>
+            <a
+              href={`${API}/auth/dev-admin-login`}
+              className="px-4 py-2 rounded-lg text-sm font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-600 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+            >
+              Login as Admin User
+            </a>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

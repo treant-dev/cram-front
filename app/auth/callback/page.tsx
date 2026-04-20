@@ -1,34 +1,20 @@
 "use client";
 
-import { Suspense, useEffect } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { saveToken } from "@/lib/auth";
-
-function AuthCallbackInner() {
-  const router = useRouter();
-  const params = useSearchParams();
-
-  useEffect(() => {
-    const token = params.get("token");
-    if (token) {
-      saveToken(token);
-      router.replace("/sets");
-    } else {
-      router.replace("/");
-    }
-  }, [params, router]);
-
-  return (
-    <div className="min-h-screen flex items-center justify-center text-gray-500">
-      Signing you in…
-    </div>
-  );
-}
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { markLoggedIn } from "@/lib/auth";
 
 export default function AuthCallback() {
+  const router = useRouter();
+
+  useEffect(() => {
+    markLoggedIn();
+    router.replace("/collections");
+  }, [router]);
+
   return (
-    <Suspense>
-      <AuthCallbackInner />
-    </Suspense>
+    <div className="min-h-screen flex items-center justify-center text-gray-500 dark:text-slate-400">
+      Signing you in…
+    </div>
   );
 }

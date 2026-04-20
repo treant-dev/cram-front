@@ -1,13 +1,15 @@
+const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
+
 export function isLoggedIn(): boolean {
   if (typeof window === "undefined") return false;
-  return !!localStorage.getItem("token");
+  return localStorage.getItem("logged_in") === "1";
 }
 
-export function logout() {
-  localStorage.removeItem("token");
-  window.location.href = "/";
+export function markLoggedIn(): void {
+  localStorage.setItem("logged_in", "1");
 }
 
-export function saveToken(token: string) {
-  localStorage.setItem("token", token);
+export function logout(): void {
+  localStorage.removeItem("logged_in");
+  window.location.href = `${BASE}/auth/logout`;
 }
