@@ -4,7 +4,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from "
 import { api } from "@/lib/api";
 import { isLoggedIn } from "@/lib/auth";
 
-export type CurrentUser = { id: string; email: string; role: string };
+export type CurrentUser = { id: string; email: string; role: string; picture: string };
 
 const UserContext = createContext<CurrentUser | null>(null);
 

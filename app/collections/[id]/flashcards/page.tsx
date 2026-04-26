@@ -103,8 +103,11 @@ export default function FlashcardsPage(props: PageProps<"/collections/[id]/flash
 
         <div
           onClick={flip}
-          className="cursor-pointer w-full max-w-lg min-h-48 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-2xl shadow-sm flex items-center justify-center p-8 text-center select-none hover:shadow-md dark:hover:border-slate-600 transition-all"
+          className="cursor-pointer w-full max-w-lg min-h-48 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-2xl shadow-sm flex flex-col items-center justify-center p-8 text-center select-none hover:shadow-md dark:hover:border-slate-600 transition-all gap-4"
         >
+          {card.Image && !flipped && (
+            <img src={card.Image} alt="" className="max-h-36 max-w-full rounded-lg object-contain" />
+          )}
           <p className="text-xl font-medium text-gray-900 dark:text-slate-100">
             {flipped ? card.Answer : card.Question}
           </p>

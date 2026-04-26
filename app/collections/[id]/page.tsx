@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useState, useRef } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { api, Collection, Card, TestQuestion, TestOption } from "@/lib/api";
 import { isLoggedIn } from "@/lib/auth";
 import Navbar from "@/components/Navbar";
+import ImageUpload from "@/components/ImageUpload";
 
 const inputCls = "border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 placeholder:text-gray-400 dark:placeholder:text-slate-500";
 const formCls = "bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl p-4 mb-3 flex flex-col gap-3";
@@ -33,22 +34,24 @@ function MasteryDot({ stats }: { stats: import("@/lib/api").CardStats | import("
 
 function CardForm({ initial, onSave, onCancel }: {
   initial?: Card;
-  onSave: (question: string, answer: string) => void;
+  onSave: (question: string, answer: string, image: string) => void;
   onCancel: () => void;
 }) {
   const [question, setQuestion] = useState(initial?.Question ?? "");
   const [answer, setAnswer] = useState(initial?.Answer ?? "");
+  const [image, setImage] = useState(initial?.Image ?? "");
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!question.trim() || !answer.trim()) return;
-    onSave(question.trim(), answer.trim());
+    onSave(question.trim(), answer.trim(), image);
   }
 
   return (
     <form onSubmit={submit} className={formCls}>
-      <input className={inputCls} placeholder="Front" value={question} onChange={(e) => setQuestion(e.target.value)} required autoFocus={!initial} />
-      <input className={inputCls} placeholder="Back" value={answer} onChange={(e) => setAnswer(e.target.value)} required />
+      <input className={inputCls} placeholder="Front" value={question} onChange={(e) => setQuestion(e.target.value)} required autoFocus={!initial} maxLength={2000} />
+      <input className={inputCls} placeholder="Back" value={answer} onChange={(e) => setAnswer(e.target.value)} required maxLength={2000} />
+      <ImageUpload value={image} onChange={setImage} />
       <div className="flex gap-2 justify-end">
         <button type="button" onClick={onCancel} className="text-sm text-gray-500 dark:text-slate-400 px-3 py-1 hover:text-gray-700 dark:hover:text-slate-200">Cancel</button>
         <button type="submit" className="bg-indigo-600 text-white px-4 py-1.5 rounded-lg text-sm font-medium hover:bg-indigo-700">
@@ -63,13 +66,14 @@ function CardForm({ initial, onSave, onCancel }: {
 
 function TestForm({ initial, onSave, onCancel }: {
   initial?: TestQuestion;
-  onSave: (question: string, options: TestOption[]) => void;
+  onSave: (question: string, options: TestOption[], image: string) => void;
   onCancel: () => void;
 }) {
   const [question, setQuestion] = useState(initial?.Question ?? "");
   const [options, setOptions] = useState<TestOption[]>(
     initial?.Options ?? [{ text: "", is_correct: false }, { text: "", is_correct: false }]
   );
+  const [image, setImage] = useState(initial?.Image ?? "");
 
   function setOptionText(i: number, text: string) {
     setOptions((prev) => prev.map((o, idx) => idx === i ? { ...o, text } : o));
@@ -87,20 +91,20 @@ function TestForm({ initial, onSave, onCancel }: {
     e.preventDefault();
     const cleaned = options.map((o) => ({ ...o, text: o.text.trim() })).filter((o) => o.text);
     if (!question.trim() || cleaned.length < 2 || !cleaned.some((o) => o.is_correct)) return;
-    onSave(question.trim(), cleaned);
+    onSave(question.trim(), cleaned, image);
   }
 
   const hasCorrect = options.some((o) => o.is_correct);
 
   return (
     <form onSubmit={submit} className={formCls}>
-      <input className={inputCls} placeholder="Question" value={question} onChange={(e) => setQuestion(e.target.value)} required autoFocus={!initial} />
+      <input className={inputCls} placeholder="Question" value={question} onChange={(e) => setQuestion(e.target.value)} required autoFocus={!initial} maxLength={2000} />
       <div className="flex flex-col gap-2">
         <p className="text-xs text-gray-400 dark:text-slate-500">Options — check the correct one(s)</p>
         {options.map((opt, i) => (
           <div key={i} className="flex items-center gap-2">
             <input type="checkbox" checked={opt.is_correct} onChange={() => toggleCorrect(i)} className="w-4 h-4 accent-indigo-600 shrink-0" />
-            <input className={inputCls + " flex-1"} placeholder={`Option ${i + 1}`} value={opt.text} onChange={(e) => setOptionText(i, e.target.value)} />
+            <input className={inputCls + " flex-1"} placeholder={`Option ${i + 1}`} value={opt.text} onChange={(e) => setOptionText(i, e.target.value)} maxLength={500} />
             {options.length > 2 && (
               <button type="button" onClick={() => removeOption(i)} className="text-gray-400 dark:text-slate-500 hover:text-red-500 text-lg leading-none">×</button>
             )}
@@ -111,6 +115,7 @@ function TestForm({ initial, onSave, onCancel }: {
         )}
         {!hasCorrect && <p className="text-xs text-red-400">Mark at least one option as correct</p>}
       </div>
+      <ImageUpload value={image} onChange={setImage} />
       <div className="flex gap-2 justify-end">
         <button type="button" onClick={onCancel} className="text-sm text-gray-500 dark:text-slate-400 px-3 py-1 hover:text-gray-700 dark:hover:text-slate-200">Cancel</button>
         <button type="submit" className="bg-indigo-600 text-white px-4 py-1.5 rounded-lg text-sm font-medium hover:bg-indigo-700">
@@ -125,6 +130,9 @@ function TestForm({ initial, onSave, onCancel }: {
 
 export default function CollectionPage(props: PageProps<"/collections/[id]">) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const autoEdit = searchParams.get("edit") === "1";
+  const autoEditFired = useRef(false);
 
   // Active (published) collection — always shown in view mode.
   const [collection, setCollection] = useState<Collection | null>(null);
@@ -148,18 +156,29 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
   const [showCardForm, setShowCardForm] = useState(false);
   const [showTestForm, setShowTestForm] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [shareToken, setShareToken] = useState<string | null>(null);
+  const [shareLoading, setShareLoading] = useState(false);
+  const [shareCopied, setShareCopied] = useState(false);
 
   useEffect(() => {
     if (!isLoggedIn()) { router.replace("/"); return; }
     api.auth.me().then((u) => setCurrentUserID(u.id)).catch(() => {});
     props.params.then(({ id }) => api.collections.get(id)).then((col) => {
       setCollection(col);
+      setShareToken(col.ShareToken ?? null);
       if (col.DraftID) {
         setHasDraft(true);
         setDraftCollectionID(col.DraftID);
       }
     }).catch(() => setError("Failed to load collection"));
   }, [router, props.params]);
+
+  useEffect(() => {
+    if (autoEdit && collection && !autoEditFired.current) {
+      autoEditFired.current = true;
+      enterEditMode();
+    }
+  }, [autoEdit, collection]);
 
   // ── Edit mode lifecycle ──────────────────────────────────────────────────────
 
@@ -190,11 +209,13 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
         id: c.ID.startsWith("new-") ? undefined : c.ID,
         question: c.Question,
         answer: c.Answer,
+        image: c.Image,
       })),
       test_questions: editTests.map((t) => ({
         id: t.ID.startsWith("new-") ? undefined : t.ID,
         question: t.Question,
         options: t.Options,
+        image: t.Image,
       })),
     };
   }
@@ -256,11 +277,11 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
 
   // ── Local-only card operations (edit mode) ───────────────────────────────────
 
-  function addCard(question: string, answer: string) {
+  function addCard(question: string, answer: string, image: string) {
     const card: Card = {
       ID: `new-${Date.now()}`,
       CollectionID: draftCollectionID ?? "",
-      Question: question, Answer: answer,
+      Question: question, Answer: answer, Image: image,
       Position: editCards.length,
       CreatedAt: "", UpdatedAt: "",
     };
@@ -268,9 +289,9 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
     setShowCardForm(false);
   }
 
-  function updateCard(question: string, answer: string) {
+  function updateCard(question: string, answer: string, image: string) {
     if (!editingCard) return;
-    setEditCards((prev) => prev.map((c) => c.ID === editingCard.ID ? { ...c, Question: question, Answer: answer } : c));
+    setEditCards((prev) => prev.map((c) => c.ID === editingCard.ID ? { ...c, Question: question, Answer: answer, Image: image } : c));
     setEditingCard(null);
   }
 
@@ -280,11 +301,11 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
 
   // ── Local-only test operations (edit mode) ───────────────────────────────────
 
-  function addTest(question: string, options: TestOption[]) {
+  function addTest(question: string, options: TestOption[], image: string) {
     const tq: TestQuestion = {
       ID: `new-${Date.now()}`,
       CollectionID: draftCollectionID ?? "",
-      Question: question, Options: options,
+      Question: question, Options: options, Image: image,
       Position: editTests.length,
       CreatedAt: "", UpdatedAt: "",
     };
@@ -292,9 +313,9 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
     setShowTestForm(false);
   }
 
-  function updateTest(question: string, options: TestOption[]) {
+  function updateTest(question: string, options: TestOption[], image: string) {
     if (!editingTest) return;
-    setEditTests((prev) => prev.map((t) => t.ID === editingTest.ID ? { ...t, Question: question, Options: options } : t));
+    setEditTests((prev) => prev.map((t) => t.ID === editingTest.ID ? { ...t, Question: question, Options: options, Image: image } : t));
     setEditingTest(null);
   }
 
@@ -315,6 +336,37 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
     if (!collection || !confirm("Delete this collection and all its content?")) return;
     await api.collections.delete(collection.ID);
     router.replace("/collections");
+  }
+
+  // ── Share link ───────────────────────────────────────────────────────────────
+
+  async function generateShareLink() {
+    if (!collection) return;
+    setShareLoading(true);
+    try {
+      const { token } = await api.share.generate(collection.ID);
+      setShareToken(token);
+    } finally {
+      setShareLoading(false);
+    }
+  }
+
+  async function revokeShareLink() {
+    if (!collection) return;
+    setShareLoading(true);
+    try {
+      await api.share.revoke(collection.ID);
+      setShareToken(null);
+    } finally {
+      setShareLoading(false);
+    }
+  }
+
+  function copyShareLink() {
+    if (!shareToken) return;
+    navigator.clipboard.writeText(`${window.location.origin}/shared/${shareToken}`);
+    setShareCopied(true);
+    setTimeout(() => setShareCopied(false), 2000);
   }
 
   // ── Render ───────────────────────────────────────────────────────────────────
@@ -361,13 +413,25 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
 
         {/* Header */}
         {editMode ? (
-          <div className="mb-4 flex flex-col gap-2">
-            {/* Draft badge */}
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
-                Draft
-              </span>
-              <span className="text-xs text-gray-400 dark:text-slate-500">Changes are saved as a draft until you publish</span>
+          <div className="flex flex-col gap-2 mb-4">
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
+                  Draft
+                </span>
+                <span className="text-xs text-gray-400 dark:text-slate-500">Changes are saved as a draft until you publish</span>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button onClick={publish} disabled={saving} className={`${btnBase} bg-indigo-600 border-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-60`}>
+                  {saving ? "Saving…" : "Publish"}
+                </button>
+                <button onClick={saveDraftAndExit} disabled={saving} className={`${btnBase} border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700 disabled:opacity-60`}>
+                  Save draft
+                </button>
+                <button onClick={discard} disabled={saving} className={`${btnBase} border-red-200 dark:border-red-800 bg-white dark:bg-slate-800 text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-60`}>
+                  Discard
+                </button>
+              </div>
             </div>
             <input
               className={inputCls + " text-lg font-bold"}
@@ -376,29 +440,30 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
               placeholder="Title"
               required
               autoFocus
+              maxLength={200}
             />
             <input
               className={inputCls}
               value={metaDesc}
               onChange={(e) => setMetaDesc(e.target.value)}
               placeholder="Description (optional)"
+              maxLength={1000}
             />
-            <div className="flex gap-2 mt-1 flex-wrap">
-              <button onClick={publish} disabled={saving} className="bg-indigo-600 text-white px-4 py-1.5 rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-60">
-                {saving ? "Saving…" : "Publish"}
-              </button>
-              <button onClick={saveDraftAndExit} disabled={saving} className="bg-gray-100 dark:bg-slate-800 text-gray-700 dark:text-slate-300 px-4 py-1.5 rounded-lg text-sm font-medium hover:bg-gray-200 dark:hover:bg-slate-700 disabled:opacity-60">
-                Save draft
-              </button>
-              <button onClick={discard} disabled={saving} className="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 px-4 py-1.5 rounded-lg text-sm font-medium hover:bg-red-100 dark:hover:bg-red-900/40 disabled:opacity-60">
-                Discard
-              </button>
-            </div>
           </div>
         ) : (
+          <>
           <div className="flex items-start justify-between mb-4">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900 dark:text-slate-100">{collection.Title}</h1>
+              <div className="flex items-center gap-2">
+                <h1 className="text-2xl font-bold text-gray-900 dark:text-slate-100">{collection.Title}</h1>
+                <span className={`text-xs font-medium px-2 py-0.5 rounded-full border ${
+                  collection.IsPublic
+                    ? "bg-green-50 dark:bg-green-900/20 border-green-300 dark:border-green-700 text-green-700 dark:text-green-400"
+                    : "bg-gray-100 dark:bg-slate-800 border-gray-300 dark:border-slate-600 text-gray-500 dark:text-slate-400"
+                }`}>
+                  {collection.IsPublic ? "Public" : "Private"}
+                </span>
+              </div>
               {collection.Description && <p className="text-gray-500 dark:text-slate-400 text-sm mt-1">{collection.Description}</p>}
             </div>
             <div className="flex items-center gap-2 ml-4 mt-1 shrink-0 flex-wrap justify-end">
@@ -419,21 +484,40 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
               )}
               {isOwner && (
                 <>
-                  <button
-                    onClick={togglePublic}
-                    className={`${btnBase} ${
-                      collection.IsPublic
-                        ? "border-green-300 dark:border-green-700 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/40"
-                        : "border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-500 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-700"
-                    }`}
-                  >
-                    {collection.IsPublic ? "Public" : "Private"}
+                  <button onClick={togglePublic} className={`${btnBase} border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700`}>
+                    {collection.IsPublic ? "Make private" : "Make public"}
                   </button>
                   <button onClick={deleteCollection} className={`${btnBase} border-red-200 dark:border-red-800 bg-white dark:bg-slate-800 text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20`}>Delete</button>
                 </>
               )}
             </div>
           </div>
+
+          {/* Share link row */}
+          {isOwner && (
+            <div className="flex items-center gap-3 mb-4 flex-wrap">
+              {shareToken ? (
+                <>
+                  <input
+                    readOnly
+                    value={`${typeof window !== "undefined" ? window.location.origin : ""}/shared/${shareToken}`}
+                    className={inputCls + " flex-1 min-w-0 font-mono text-xs"}
+                  />
+                  <button onClick={copyShareLink} className={`${btnBase} border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700 shrink-0`}>
+                    {shareCopied ? "Copied!" : "Copy"}
+                  </button>
+                  <button onClick={revokeShareLink} disabled={shareLoading} className={`${btnBase} border-red-200 dark:border-red-800 bg-white dark:bg-slate-800 text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 shrink-0`}>
+                    Revoke link
+                  </button>
+                </>
+              ) : (
+                <button onClick={generateShareLink} disabled={shareLoading} className={`${btnBase} border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700`}>
+                  {shareLoading ? "Generating…" : "Create share link"}
+                </button>
+              )}
+            </div>
+          )}
+          </>
         )}
 
         {/* Study mode buttons */}
@@ -460,7 +544,7 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
             <h2 className="font-semibold text-gray-700 dark:text-slate-300">Cards ({cards.length})</h2>
             {editMode && (
               <button onClick={() => { closeAllForms(); setShowCardForm((v) => !v); }}
-                className="text-sm text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 font-medium">+ Add card</button>
+                className={`${btnBase} border-indigo-300 dark:border-indigo-700 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/40`}>+ Add card</button>
             )}
           </div>
 
@@ -473,8 +557,11 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
                   <CardForm initial={card} onSave={updateCard} onCancel={() => setEditingCard(null)} />
                 ) : (
                   <div className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl px-5 py-3 flex justify-between items-center gap-4">
-                    <div className="flex-1 min-w-0 flex items-center gap-2">
+                    <div className="flex-1 min-w-0 flex items-center gap-3">
                       {!editMode && <MasteryDot stats={card.Stats ?? null} />}
+                      {card.Image && (
+                        <img src={card.Image} alt="" className="w-10 h-10 rounded object-cover shrink-0" />
+                      )}
                       <div className="min-w-0">
                         <span className="font-medium text-gray-900 dark:text-slate-100">{card.Question}</span>
                         <span className="text-gray-400 dark:text-slate-600 mx-2">→</span>
@@ -501,7 +588,7 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
             <h2 className="font-semibold text-gray-700 dark:text-slate-300">Test questions ({tests.length})</h2>
             {editMode && (
               <button onClick={() => { closeAllForms(); setShowTestForm((v) => !v); }}
-                className="text-sm text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 font-medium">+ Add question</button>
+                className={`${btnBase} border-indigo-300 dark:border-indigo-700 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/40`}>+ Add question</button>
             )}
           </div>
 
@@ -517,6 +604,9 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
                         {!editMode && <MasteryDot stats={tq.Stats ?? null} />}
+                        {tq.Image && (
+                          <img src={tq.Image} alt="" className="w-10 h-10 rounded object-cover shrink-0" />
+                        )}
                         <p className="font-medium text-gray-900 dark:text-slate-100">{tq.Question}</p>
                       </div>
                       <div className="flex flex-wrap gap-1">

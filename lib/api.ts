@@ -30,6 +30,7 @@ export type Collection = {
   IsDraft: boolean;
   DraftOf: string | null;
   DraftID: string | null; // populated for owners when a draft exists
+  ShareToken: string | null;
   Cards: Card[] | null;
   TestQuestions: TestQuestion[] | null;
   CreatedAt: string;
@@ -40,8 +41,8 @@ export type DraftBody = {
   title: string;
   description: string;
   is_public: boolean;
-  cards: { id?: string; question: string; answer: string }[];
-  test_questions: { id?: string; question: string; options: TestOption[] }[];
+  cards: { id?: string; question: string; answer: string; image: string }[];
+  test_questions: { id?: string; question: string; options: TestOption[]; image: string }[];
 };
 
 export type PublicCollection = Collection & {
@@ -69,6 +70,7 @@ export type Card = {
   CollectionID: string;
   Question: string;
   Answer: string;
+  Image: string;
   Position: number;
   Stats?: CardStats | null;
   CreatedAt: string;
@@ -92,6 +94,7 @@ export type TestQuestion = {
   CollectionID: string;
   Question: string;
   Options: TestOption[];
+  Image: string;
   Position: number;
   Stats?: TQStats | null;
   CreatedAt: string;
@@ -120,9 +123,22 @@ export type HomeData = {
   Following: Collection[];
 };
 
+export async function uploadFile(file: File): Promise<string> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(`${BASE}/upload`, {
+    method: "POST",
+    credentials: "include",
+    body: form,
+  });
+  if (!res.ok) throw new Error(`upload failed: ${res.status}`);
+  const data = await res.json();
+  return data.url as string;
+}
+
 export const api = {
   auth: {
-    me: () => request<{ id: string; email: string; role: string }>("/auth/me"),
+    me: () => request<{ id: string; email: string; role: string; picture: string }>("/auth/me"),
   },
   home: {
     get: () => request<HomeData>("/home"),
@@ -164,6 +180,17 @@ export const api = {
   },
   users: {
     list: () => request<UserProfile[]>("/users"),
+  },
+  account: {
+    delete: () => request<void>("/account", { method: "DELETE" }),
+  },
+  share: {
+    generate: (collectionID: string) =>
+      request<{ token: string }>(`/collections/${collectionID}/share`, { method: "POST" }),
+    revoke: (collectionID: string) =>
+      request<void>(`/collections/${collectionID}/share`, { method: "DELETE" }),
+    getByToken: (token: string) =>
+      request<Collection>(`/shared/${token}`),
   },
   admin: {
     listUsers: () => request<UserProfile[]>("/admin/users"),

@@ -48,8 +48,7 @@ export default function HomePage() {
     e.preventDefault();
     if (!title.trim()) return;
     const col = await api.collections.create(title.trim(), description.trim());
-    setOwn((prev) => [col, ...prev]);
-    setTitle(""); setDescription(""); setShowForm(false);
+    router.push(`/collections/${col.ID}?edit=1`);
   }
 
   const skeleton = (
@@ -83,12 +82,14 @@ export default function HomePage() {
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 required
+                maxLength={200}
               />
               <input
                 className="border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 placeholder:text-gray-400 dark:placeholder:text-slate-500"
                 placeholder="Description (optional)"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
+                maxLength={1000}
               />
               <div className="flex gap-2 justify-end">
                 <button type="button" onClick={() => setShowForm(false)} className="text-sm text-gray-500 dark:text-slate-400 px-3 py-1 hover:text-gray-700 dark:hover:text-slate-200">Cancel</button>

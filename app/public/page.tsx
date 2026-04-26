@@ -11,6 +11,7 @@ export default function CollectionsMarketPage() {
   const [collections, setCollections] = useState<PublicCollection[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
   const loggedIn = isLoggedIn();
   const currentUser = useCurrentUser();
   const isAdmin = currentUser?.role === "admin";
@@ -52,11 +53,23 @@ export default function CollectionsMarketPage() {
     }
   }
 
+  const filtered = collections.filter((c) =>
+    c.Title.toLowerCase().includes(search.toLowerCase())
+  );
+
   return (
     <div className="min-h-screen flex flex-col">
       <Navbar />
       <main className="max-w-3xl mx-auto w-full px-4 py-8 flex-1">
         <h1 className="text-2xl font-bold mb-6 text-gray-900 dark:text-slate-100">Collections Market</h1>
+
+        <input
+          type="text"
+          placeholder="Search by collection name…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="mb-4 w-full rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-4 py-2 text-sm text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+        />
 
         {loading ? (
           <div className="flex flex-col gap-3 animate-pulse">
@@ -64,11 +77,13 @@ export default function CollectionsMarketPage() {
           </div>
         ) : error ? (
           <p className="text-red-500 text-sm">{error}</p>
-        ) : collections.length === 0 ? (
-          <p className="text-gray-400 dark:text-slate-500 text-sm">No public collections yet.</p>
+        ) : filtered.length === 0 ? (
+          <p className="text-gray-400 dark:text-slate-500 text-sm">
+            {search ? "No collections match your search." : "No public collections yet."}
+          </p>
         ) : (
           <ul className="flex flex-col gap-3">
-            {collections.map((c) => (
+            {filtered.map((c) => (
               <li key={c.ID} className="flex items-center gap-3 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl px-5 py-4 hover:border-indigo-400 dark:hover:border-indigo-500 hover:shadow-sm transition-all">
                 <Link href={`/collections/${c.ID}`} className="flex-1 min-w-0">
                   <p className="font-semibold text-gray-900 dark:text-slate-100 truncate">{c.Title}</p>

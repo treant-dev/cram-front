@@ -141,7 +141,10 @@ export default function StudySession({ items, collectionID, doneTitle, error }: 
             </span>
           </div>
 
-          <div className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-2xl p-6 text-center shadow-sm">
+          <div className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-2xl p-6 text-center shadow-sm flex flex-col items-center gap-4">
+            {item.image && (
+              <img src={item.image} alt="" className="max-h-40 max-w-full rounded-lg object-contain" />
+            )}
             <p className="text-xl font-semibold text-gray-900 dark:text-slate-100">{item.question}</p>
           </div>
 

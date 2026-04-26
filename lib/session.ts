@@ -2,6 +2,7 @@ import type { Card, TestQuestion } from "@/lib/api";
 
 export type SessionItem = {
   question: string;
+  image: string;
   options: { text: string; isCorrect: boolean }[];
   multi: boolean;
   frontLabel: boolean;
@@ -33,6 +34,7 @@ export function fromCards(cards: Card[]): SessionItem[] {
       }));
       return {
         question: card.Question,
+        image: card.Image,
         options,
         multi: false,
         frontLabel: true,
@@ -50,6 +52,7 @@ export function fromTests(questions: TestQuestion[]): SessionItem[] {
       const multi = q.Options.filter((o) => o.is_correct).length > 1;
       return {
         question: q.Question,
+        image: q.Image,
         options: q.Options.map((o) => ({ text: o.text, isCorrect: o.is_correct })),
         multi,
         frontLabel: false,
@@ -81,6 +84,7 @@ export function fromMix(cards: Card[], questions: TestQuestion[]): SessionItem[]
     }));
     return {
       question: card.Question,
+      image: card.Image,
       options,
       multi: false,
       frontLabel: true,
@@ -109,6 +113,7 @@ export function fromMix(cards: Card[], questions: TestQuestion[]): SessionItem[]
     }));
     return {
       question: q.Question,
+      image: q.Image,
       options,
       multi,
       frontLabel: false,
