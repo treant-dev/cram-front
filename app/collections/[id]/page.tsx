@@ -12,6 +12,232 @@ const inputCls = "border border-gray-300 dark:border-slate-600 bg-white dark:bg-
 const formCls = "bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl p-4 mb-3 flex flex-col gap-3";
 const btnBase = "text-sm px-3 py-1.5 rounded-lg border transition-colors disabled:opacity-60 font-medium";
 
+// ── Import panel ─────────────────────────────────────────────────────────────
+
+type ParsedRow = { question: string; answer: string };
+type ParseError = { line: number; text: string; message: string };
+
+function parseCSV(text: string): { rows: ParsedRow[]; errors: ParseError[] } {
+  const rows: ParsedRow[] = [];
+  const errors: ParseError[] = [];
+  text.split("\n").forEach((raw, i) => {
+    const line = raw.trim();
+    if (!line) return;
+    const parts = line.split(";");
+    if (parts.length !== 2) {
+      errors.push({ line: i + 1, text: line, message: `expected 2 columns, got ${parts.length}` });
+      return;
+    }
+    const q = parts[0].trim();
+    const a = parts[1].trim();
+    if (!q || !a) {
+      errors.push({ line: i + 1, text: line, message: !q ? "front is empty" : "back is empty" });
+      return;
+    }
+    rows.push({ question: q, answer: a });
+  });
+  return { rows, errors };
+}
+
+function ImportPanel({ collectionID, onDone, onCancel }: {
+  collectionID: string;
+  onDone: (count: number) => void;
+  onCancel: () => void;
+}) {
+  const [text, setText] = useState("");
+  const [importing, setImporting] = useState(false);
+  const { rows, errors } = parseCSV(text);
+
+  async function doImport() {
+    if (rows.length === 0 || errors.length > 0) return;
+    setImporting(true);
+    try {
+      const { imported } = await api.cards.importText(collectionID, text);
+      onDone(imported);
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  return (
+    <div className={formCls}>
+      <div className="flex items-center justify-between">
+        <p className="text-sm font-medium text-gray-700 dark:text-slate-300">Import cards</p>
+        <p className="text-xs text-gray-400 dark:text-slate-500">One card per line: <code className="bg-gray-100 dark:bg-slate-800 px-1 rounded">front;back</code></p>
+      </div>
+
+      <textarea
+        className={inputCls + " min-h-[120px] resize-y font-mono text-xs"}
+        placeholder={"What is a goroutine?;A lightweight thread managed by Go\nWhat does defer do?;Runs a function when the surrounding function returns"}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        autoFocus
+      />
+
+      {errors.length > 0 && (
+        <div className="flex flex-col gap-1">
+          {errors.map((e) => (
+            <p key={e.line} className="text-xs text-red-500 dark:text-red-400">
+              Line {e.line}: {e.message} — <span className="font-mono">{e.text.slice(0, 60)}{e.text.length > 60 ? "…" : ""}</span>
+            </p>
+          ))}
+        </div>
+      )}
+
+      {rows.length > 0 && errors.length === 0 && (
+        <div className="flex flex-col gap-1">
+          <p className="text-xs text-gray-400 dark:text-slate-500 font-medium">Preview — {rows.length} card{rows.length !== 1 ? "s" : ""}</p>
+          <div className="max-h-48 overflow-y-auto flex flex-col gap-1">
+            {rows.map((r, i) => (
+              <div key={i} className="flex items-center gap-2 text-xs bg-gray-50 dark:bg-slate-800 rounded px-3 py-1.5">
+                <span className="text-gray-900 dark:text-slate-100 font-medium truncate flex-1">{r.question}</span>
+                <span className="text-gray-400 dark:text-slate-600 shrink-0">→</span>
+                <span className="text-gray-600 dark:text-slate-400 truncate flex-1">{r.answer}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="flex gap-2 justify-end">
+        <button type="button" onClick={onCancel} className="text-sm text-gray-500 dark:text-slate-400 px-3 py-1 hover:text-gray-700 dark:hover:text-slate-200">Cancel</button>
+        <button
+          onClick={doImport}
+          disabled={importing || rows.length === 0 || errors.length > 0}
+          className="bg-indigo-600 text-white px-4 py-1.5 rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50"
+        >
+          {importing ? "Importing…" : `Import${rows.length > 0 ? ` ${rows.length} card${rows.length !== 1 ? "s" : ""}` : ""}`}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Import test panel ─────────────────────────────────────────────────────────
+
+type ParsedTest = { question: string; options: { text: string; isCorrect: boolean }[] };
+type TestParseError = { line: number; text: string; message: string };
+
+function parseTestCSV(raw: string): { rows: ParsedTest[]; errors: TestParseError[] } {
+  const rows: ParsedTest[] = [];
+  const errors: TestParseError[] = [];
+  raw.split("\n").forEach((line, i) => {
+    const trimmed = line.trim();
+    if (!trimmed) return;
+    const parts = trimmed.split(";");
+    if (parts.length < 5) {
+      errors.push({ line: i + 1, text: trimmed, message: "need at least 5 columns (question;is_correct;answer;is_correct;answer)" });
+      return;
+    }
+    if ((parts.length - 1) % 2 !== 0) {
+      errors.push({ line: i + 1, text: trimmed, message: "options must come in pairs (is_correct;answer)" });
+      return;
+    }
+    const question = parts[0].trim();
+    if (!question) {
+      errors.push({ line: i + 1, text: trimmed, message: "question is empty" });
+      return;
+    }
+    const options: { text: string; isCorrect: boolean }[] = [];
+    for (let j = 1; j + 1 < parts.length; j += 2) {
+      const flag = parts[j].trim().toLowerCase();
+      const text = parts[j + 1].trim();
+      if (!text) {
+        errors.push({ line: i + 1, text: trimmed, message: `option ${Math.floor(j / 2) + 1} text is empty` });
+        return;
+      }
+      options.push({ text, isCorrect: flag === "1" || flag === "t" || flag === "true" });
+    }
+    if (!options.some((o) => o.isCorrect)) {
+      errors.push({ line: i + 1, text: trimmed, message: "no correct answer marked (use 1 or t)" });
+      return;
+    }
+    rows.push({ question, options });
+  });
+  return { rows, errors };
+}
+
+function ImportTestPanel({ collectionID, onDone, onCancel }: {
+  collectionID: string;
+  onDone: () => void;
+  onCancel: () => void;
+}) {
+  const [text, setText] = useState("");
+  const [importing, setImporting] = useState(false);
+  const { rows, errors } = parseTestCSV(text);
+
+  async function doImport() {
+    if (rows.length === 0 || errors.length > 0) return;
+    setImporting(true);
+    try {
+      await api.tests.importText(collectionID, text);
+      onDone();
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  return (
+    <div className={formCls}>
+      <div className="flex items-center justify-between">
+        <p className="text-sm font-medium text-gray-700 dark:text-slate-300">Import test questions</p>
+        <p className="text-xs text-gray-400 dark:text-slate-500">
+          <code className="bg-gray-100 dark:bg-slate-800 px-1 rounded">question;0/1;option;0/1;option;…</code>
+        </p>
+      </div>
+
+      <textarea
+        className={inputCls + " min-h-[120px] resize-y font-mono text-xs"}
+        placeholder={"What is Go?;1;A compiled language;0;A scripting language;0;A markup language\nWhat does defer do?;0;Starts goroutine;1;Runs when function returns;0;Allocates memory"}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        autoFocus
+      />
+
+      {errors.length > 0 && (
+        <div className="flex flex-col gap-1">
+          {errors.map((e) => (
+            <p key={e.line} className="text-xs text-red-500 dark:text-red-400">
+              Line {e.line}: {e.message} — <span className="font-mono">{e.text.slice(0, 60)}{e.text.length > 60 ? "…" : ""}</span>
+            </p>
+          ))}
+        </div>
+      )}
+
+      {rows.length > 0 && errors.length === 0 && (
+        <div className="flex flex-col gap-1">
+          <p className="text-xs text-gray-400 dark:text-slate-500 font-medium">Preview — {rows.length} question{rows.length !== 1 ? "s" : ""}</p>
+          <div className="max-h-48 overflow-y-auto flex flex-col gap-2">
+            {rows.map((r, i) => (
+              <div key={i} className="text-xs bg-gray-50 dark:bg-slate-800 rounded px-3 py-2">
+                <p className="font-medium text-gray-900 dark:text-slate-100 mb-1">{r.question}</p>
+                <div className="flex flex-wrap gap-1">
+                  {r.options.map((o, j) => (
+                    <span key={j} className={`px-2 py-0.5 rounded ${o.isCorrect ? "bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400" : "bg-gray-100 dark:bg-slate-700 text-gray-500 dark:text-slate-400"}`}>
+                      {o.text}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="flex gap-2 justify-end">
+        <button type="button" onClick={onCancel} className="text-sm text-gray-500 dark:text-slate-400 px-3 py-1 hover:text-gray-700 dark:hover:text-slate-200">Cancel</button>
+        <button
+          onClick={doImport}
+          disabled={importing || rows.length === 0 || errors.length > 0}
+          className="bg-indigo-600 text-white px-4 py-1.5 rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50"
+        >
+          {importing ? "Importing…" : `Import${rows.length > 0 ? ` ${rows.length} question${rows.length !== 1 ? "s" : ""}` : ""}`}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function trunc(s: string, n: number) {
   return s.length > n ? s.slice(0, n) + "…" : s;
 }
@@ -155,6 +381,8 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
   const [editingTest, setEditingTest] = useState<TestQuestion | null>(null);
   const [showCardForm, setShowCardForm] = useState(false);
   const [showTestForm, setShowTestForm] = useState(false);
+  const [showImport, setShowImport] = useState(false);
+  const [showImportTest, setShowImportTest] = useState(false);
   const [saving, setSaving] = useState(false);
   const [shareToken, setShareToken] = useState<string | null>(null);
   const [shareLoading, setShareLoading] = useState(false);
@@ -271,6 +499,8 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
   function closeAllForms() {
     setShowCardForm(false);
     setShowTestForm(false);
+    setShowImport(false);
+    setShowImportTest(false);
     setEditingCard(null);
     setEditingTest(null);
   }
@@ -490,11 +720,25 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
             <div className="flex items-center justify-between mb-3">
               <h2 className="font-semibold text-gray-700 dark:text-slate-300">Cards ({cards.length})</h2>
               {editMode && (
-                <button onClick={() => { closeAllForms(); setShowCardForm((v) => !v); }}
-                  className={`${btnBase} border-indigo-300 dark:border-indigo-700 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/40`}>+ Add card</button>
+                <div className="flex gap-2">
+                  <button onClick={() => { closeAllForms(); setShowCardForm((v) => !v); }}
+                    className={`${btnBase} border-indigo-300 dark:border-indigo-700 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/40`}>+ Add card</button>
+                  <button onClick={() => { closeAllForms(); setShowImport((v) => !v); }}
+                    className={`${btnBase} border-indigo-300 dark:border-indigo-700 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/40`}>+ Import</button>
+                </div>
               )}
             </div>
 
+            {editMode && showImport && draftCollectionID && (
+              <ImportPanel
+                collectionID={draftCollectionID}
+                onCancel={() => setShowImport(false)}
+                onDone={() => {
+                  setShowImport(false);
+                  api.drafts.getOrCreate(collection.ID).then((draft) => setEditCards(draft.Cards ?? []));
+                }}
+              />
+            )}
             {editMode && showCardForm && <CardForm onSave={addCard} onCancel={() => setShowCardForm(false)} />}
 
             <ul className="flex flex-col gap-2">
@@ -536,11 +780,25 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
             <div className="flex items-center justify-between mb-3">
               <h2 className="font-semibold text-gray-700 dark:text-slate-300">Test questions ({tests.length})</h2>
               {editMode && (
-                <button onClick={() => { closeAllForms(); setShowTestForm((v) => !v); }}
-                  className={`${btnBase} border-indigo-300 dark:border-indigo-700 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/40`}>+ Add question</button>
+                <div className="flex gap-2">
+                  <button onClick={() => { closeAllForms(); setShowTestForm((v) => !v); }}
+                    className={`${btnBase} border-indigo-300 dark:border-indigo-700 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/40`}>+ Add question</button>
+                  <button onClick={() => { closeAllForms(); setShowImportTest((v) => !v); }}
+                    className={`${btnBase} border-indigo-300 dark:border-indigo-700 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/40`}>+ Import</button>
+                </div>
               )}
             </div>
 
+            {editMode && showImportTest && draftCollectionID && (
+              <ImportTestPanel
+                collectionID={draftCollectionID}
+                onCancel={() => setShowImportTest(false)}
+                onDone={() => {
+                  setShowImportTest(false);
+                  api.drafts.getOrCreate(collection.ID).then((draft) => setEditTests(draft.TestQuestions ?? []));
+                }}
+              />
+            )}
             {editMode && showTestForm && <TestForm onSave={addTest} onCancel={() => setShowTestForm(false)} />}
 
             <ul className="flex flex-col gap-2">
