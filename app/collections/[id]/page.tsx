@@ -451,73 +451,19 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
             />
           </div>
         ) : (
-          <>
-          <div className="flex items-start justify-between mb-4">
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-2xl font-bold text-gray-900 dark:text-slate-100">{collection.Title}</h1>
-                <span className={`text-xs font-medium px-2 py-0.5 rounded-full border ${
-                  collection.IsPublic
-                    ? "bg-green-50 dark:bg-green-900/20 border-green-300 dark:border-green-700 text-green-700 dark:text-green-400"
-                    : "bg-gray-100 dark:bg-slate-800 border-gray-300 dark:border-slate-600 text-gray-500 dark:text-slate-400"
-                }`}>
-                  {collection.IsPublic ? "Public" : "Private"}
-                </span>
-              </div>
-              {collection.Description && <p className="text-gray-500 dark:text-slate-400 text-sm mt-1">{collection.Description}</p>}
+          <div className="mb-4">
+            <div className="flex items-center gap-2 mb-1">
+              <h1 className="text-2xl font-bold text-gray-900 dark:text-slate-100">{collection.Title}</h1>
+              <span className={`text-xs font-medium px-2 py-0.5 rounded-full border ${
+                collection.IsPublic
+                  ? "bg-green-50 dark:bg-green-900/20 border-green-300 dark:border-green-700 text-green-700 dark:text-green-400"
+                  : "bg-gray-100 dark:bg-slate-800 border-gray-300 dark:border-slate-600 text-gray-500 dark:text-slate-400"
+              }`}>
+                {collection.IsPublic ? "Public" : "Private"}
+              </span>
             </div>
-            <div className="flex items-center gap-2 ml-4 mt-1 shrink-0 flex-wrap justify-end">
-              {isOwner && hasDraft && (
-                <>
-                  <button onClick={enterEditMode} disabled={saving} className={`${btnBase} border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/40`}>
-                    Continue editing
-                  </button>
-                  <button onClick={discard} disabled={saving} className={`${btnBase} border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-500 dark:text-slate-400 hover:border-red-300 dark:hover:border-red-700 hover:text-red-500 dark:hover:text-red-400`}>
-                    Discard draft
-                  </button>
-                </>
-              )}
-              {isOwner && !hasDraft && (
-                <button onClick={enterEditMode} disabled={saving} className={`${btnBase} border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700`}>
-                  {saving ? "Loading…" : "Edit"}
-                </button>
-              )}
-              {isOwner && (
-                <>
-                  <button onClick={togglePublic} className={`${btnBase} border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700`}>
-                    {collection.IsPublic ? "Make private" : "Make public"}
-                  </button>
-                  <button onClick={deleteCollection} className={`${btnBase} border-red-200 dark:border-red-800 bg-white dark:bg-slate-800 text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20`}>Delete</button>
-                </>
-              )}
-            </div>
+            {collection.Description && <p className="text-gray-500 dark:text-slate-400 text-sm">{collection.Description}</p>}
           </div>
-
-          {/* Share link row */}
-          {isOwner && (
-            <div className="flex items-center gap-3 mb-4 flex-wrap">
-              {shareToken ? (
-                <>
-                  <input
-                    readOnly
-                    value={`${typeof window !== "undefined" ? window.location.origin : ""}/shared/${shareToken}`}
-                    className={inputCls + " flex-1 min-w-0 font-mono text-xs"}
-                  />
-                  <button onClick={copyShareLink} className={`${btnBase} border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700 shrink-0`}>
-                    {shareCopied ? "Copied!" : "Copy"}
-                  </button>
-                  <button onClick={revokeShareLink} disabled={shareLoading} className={`${btnBase} border-red-200 dark:border-red-800 bg-white dark:bg-slate-800 text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 shrink-0`}>
-                    Revoke link
-                  </button>
-                </>
-              ) : (
-                <button onClick={generateShareLink} disabled={shareLoading} className={`${btnBase} border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700`}>
-                  {shareLoading ? "Generating…" : "Create share link"}
-                </button>
-              )}
-            </div>
-          )}
-          </>
         )}
 
         {/* Study mode buttons */}
@@ -539,97 +485,148 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
         )}
 
         {/* ── Cards section ── */}
-        <div className="mb-8">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="font-semibold text-gray-700 dark:text-slate-300">Cards ({cards.length})</h2>
-            {editMode && (
-              <button onClick={() => { closeAllForms(); setShowCardForm((v) => !v); }}
-                className={`${btnBase} border-indigo-300 dark:border-indigo-700 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/40`}>+ Add card</button>
-            )}
-          </div>
+        {(editMode || cards.length > 0) && (
+          <div className="mb-8">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="font-semibold text-gray-700 dark:text-slate-300">Cards ({cards.length})</h2>
+              {editMode && (
+                <button onClick={() => { closeAllForms(); setShowCardForm((v) => !v); }}
+                  className={`${btnBase} border-indigo-300 dark:border-indigo-700 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/40`}>+ Add card</button>
+              )}
+            </div>
 
-          {editMode && showCardForm && <CardForm onSave={addCard} onCancel={() => setShowCardForm(false)} />}
+            {editMode && showCardForm && <CardForm onSave={addCard} onCancel={() => setShowCardForm(false)} />}
 
-          <ul className="flex flex-col gap-2">
-            {cards.map((card) => (
-              <li key={card.ID}>
-                {editMode && editingCard?.ID === card.ID ? (
-                  <CardForm initial={card} onSave={updateCard} onCancel={() => setEditingCard(null)} />
-                ) : (
-                  <div className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl px-5 py-3 flex justify-between items-center gap-4">
-                    <div className="flex-1 min-w-0 flex items-center gap-3">
-                      {!editMode && <MasteryDot stats={card.Stats ?? null} />}
-                      {card.Image && (
-                        <img src={card.Image} alt="" className="w-10 h-10 rounded object-cover shrink-0" />
+            <ul className="flex flex-col gap-2">
+              {cards.map((card) => (
+                <li key={card.ID}>
+                  {editMode && editingCard?.ID === card.ID ? (
+                    <CardForm initial={card} onSave={updateCard} onCancel={() => setEditingCard(null)} />
+                  ) : (
+                    <div className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl px-5 py-3 flex justify-between items-center gap-4">
+                      <div className="flex-1 min-w-0 flex items-center gap-3">
+                        {!editMode && <MasteryDot stats={card.Stats ?? null} />}
+                        {card.Image && (
+                          <img src={card.Image} alt="" className="w-10 h-10 rounded object-cover shrink-0" />
+                        )}
+                        <div className="min-w-0">
+                          <span className="font-medium text-gray-900 dark:text-slate-100">{card.Question}</span>
+                          <span className="text-gray-400 dark:text-slate-600 mx-2">→</span>
+                          <span className="text-gray-600 dark:text-slate-400 text-sm">{card.Answer}</span>
+                        </div>
+                      </div>
+                      {editMode && (
+                        <div className="flex gap-3 text-sm shrink-0">
+                          <button onClick={() => { closeAllForms(); setEditingCard(card); }} className="text-indigo-500 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300">Edit</button>
+                          <button onClick={() => deleteCard(card.ID)} className="text-red-400 hover:text-red-600 dark:hover:text-red-300">Delete</button>
+                        </div>
                       )}
-                      <div className="min-w-0">
-                        <span className="font-medium text-gray-900 dark:text-slate-100">{card.Question}</span>
-                        <span className="text-gray-400 dark:text-slate-600 mx-2">→</span>
-                        <span className="text-gray-600 dark:text-slate-400 text-sm">{card.Answer}</span>
-                      </div>
                     </div>
-                    {editMode && (
-                      <div className="flex gap-3 text-sm shrink-0">
-                        <button onClick={() => { closeAllForms(); setEditingCard(card); }} className="text-indigo-500 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300">Edit</button>
-                        <button onClick={() => deleteCard(card.ID)} className="text-red-400 hover:text-red-600 dark:hover:text-red-300">Delete</button>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </li>
-            ))}
-            {cards.length === 0 && <p className="text-sm text-gray-400 dark:text-slate-500">No cards yet.</p>}
-          </ul>
-        </div>
+                  )}
+                </li>
+              ))}
+              {editMode && cards.length === 0 && <p className="text-sm text-gray-400 dark:text-slate-500">No cards yet.</p>}
+            </ul>
+          </div>
+        )}
 
         {/* ── Test questions section ── */}
-        <div>
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="font-semibold text-gray-700 dark:text-slate-300">Test questions ({tests.length})</h2>
-            {editMode && (
-              <button onClick={() => { closeAllForms(); setShowTestForm((v) => !v); }}
-                className={`${btnBase} border-indigo-300 dark:border-indigo-700 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/40`}>+ Add question</button>
+        {(editMode || tests.length > 0) && (
+          <div className="mb-8">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="font-semibold text-gray-700 dark:text-slate-300">Test questions ({tests.length})</h2>
+              {editMode && (
+                <button onClick={() => { closeAllForms(); setShowTestForm((v) => !v); }}
+                  className={`${btnBase} border-indigo-300 dark:border-indigo-700 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/40`}>+ Add question</button>
+              )}
+            </div>
+
+            {editMode && showTestForm && <TestForm onSave={addTest} onCancel={() => setShowTestForm(false)} />}
+
+            <ul className="flex flex-col gap-2">
+              {tests.map((tq) => (
+                <li key={tq.ID}>
+                  {editMode && editingTest?.ID === tq.ID ? (
+                    <TestForm initial={tq} onSave={updateTest} onCancel={() => setEditingTest(null)} />
+                  ) : (
+                    <div className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl px-5 py-3 flex justify-between items-start gap-4">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          {!editMode && <MasteryDot stats={tq.Stats ?? null} />}
+                          {tq.Image && (
+                            <img src={tq.Image} alt="" className="w-10 h-10 rounded object-cover shrink-0" />
+                          )}
+                          <p className="font-medium text-gray-900 dark:text-slate-100">{tq.Question}</p>
+                        </div>
+                        <div className="flex flex-wrap gap-1">
+                          {tq.Options.map((o, i) => (
+                            <span key={i} className={`text-xs rounded px-2 py-0.5 ${o.is_correct ? "bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400" : "bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400"}`}>
+                              {trunc(o.text, 17)}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                      {editMode && (
+                        <div className="flex gap-3 text-sm shrink-0">
+                          <button onClick={() => { closeAllForms(); setEditingTest(tq); }} className="text-indigo-500 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300">Edit</button>
+                          <button onClick={() => deleteTest(tq.ID)} className="text-red-400 hover:text-red-600 dark:hover:text-red-300">Delete</button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </li>
+              ))}
+              {editMode && tests.length === 0 && <p className="text-sm text-gray-400 dark:text-slate-500">No test questions yet.</p>}
+            </ul>
+          </div>
+        )}
+
+        {/* ── Owner actions (view mode only) ── */}
+        {!editMode && isOwner && (
+          <div className="border-t border-gray-100 dark:border-slate-800 pt-6 mt-2 flex flex-col gap-3">
+            <div className="flex flex-wrap gap-2">
+              {hasDraft ? (
+                <>
+                  <button onClick={enterEditMode} disabled={saving} className={`${btnBase} border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/40`}>
+                    Continue editing
+                  </button>
+                  <button onClick={discard} disabled={saving} className={`${btnBase} border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-500 dark:text-slate-400 hover:border-red-300 dark:hover:border-red-700 hover:text-red-500 dark:hover:text-red-400`}>
+                    Discard draft
+                  </button>
+                </>
+              ) : (
+                <button onClick={enterEditMode} disabled={saving} className={`${btnBase} border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700`}>
+                  {saving ? "Loading…" : "Edit"}
+                </button>
+              )}
+              <button onClick={togglePublic} className={`${btnBase} border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700`}>
+                {collection.IsPublic ? "Make private" : "Make public"}
+              </button>
+              <button onClick={generateShareLink} disabled={shareLoading || !!shareToken} className={`${btnBase} border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700 disabled:opacity-40`}>
+                {shareLoading ? "Generating…" : "Create share link"}
+              </button>
+              <button onClick={deleteCollection} className={`${btnBase} border-red-200 dark:border-red-800 bg-white dark:bg-slate-800 text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20`}>
+                Delete
+              </button>
+            </div>
+
+            {shareToken && (
+              <div className="flex items-center gap-2 flex-wrap">
+                <input
+                  readOnly
+                  value={`${typeof window !== "undefined" ? window.location.origin : ""}/shared/${shareToken}`}
+                  className={inputCls + " flex-1 min-w-0 font-mono text-xs"}
+                />
+                <button onClick={copyShareLink} className={`${btnBase} border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700 shrink-0`}>
+                  {shareCopied ? "Copied!" : "Copy"}
+                </button>
+                <button onClick={revokeShareLink} disabled={shareLoading} className={`${btnBase} border-red-200 dark:border-red-800 bg-white dark:bg-slate-800 text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 shrink-0`}>
+                  Revoke
+                </button>
+              </div>
             )}
           </div>
-
-          {editMode && showTestForm && <TestForm onSave={addTest} onCancel={() => setShowTestForm(false)} />}
-
-          <ul className="flex flex-col gap-2">
-            {tests.map((tq) => (
-              <li key={tq.ID}>
-                {editMode && editingTest?.ID === tq.ID ? (
-                  <TestForm initial={tq} onSave={updateTest} onCancel={() => setEditingTest(null)} />
-                ) : (
-                  <div className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl px-5 py-3 flex justify-between items-start gap-4">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        {!editMode && <MasteryDot stats={tq.Stats ?? null} />}
-                        {tq.Image && (
-                          <img src={tq.Image} alt="" className="w-10 h-10 rounded object-cover shrink-0" />
-                        )}
-                        <p className="font-medium text-gray-900 dark:text-slate-100">{tq.Question}</p>
-                      </div>
-                      <div className="flex flex-wrap gap-1">
-                        {tq.Options.map((o, i) => (
-                          <span key={i} className={`text-xs rounded px-2 py-0.5 ${o.is_correct ? "bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400" : "bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400"}`}>
-                            {trunc(o.text, 17)}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                    {editMode && (
-                      <div className="flex gap-3 text-sm shrink-0">
-                        <button onClick={() => { closeAllForms(); setEditingTest(tq); }} className="text-indigo-500 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300">Edit</button>
-                        <button onClick={() => deleteTest(tq.ID)} className="text-red-400 hover:text-red-600 dark:hover:text-red-300">Delete</button>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </li>
-            ))}
-            {tests.length === 0 && <p className="text-sm text-gray-400 dark:text-slate-500">No test questions yet.</p>}
-          </ul>
-        </div>
+        )}
       </main>
     </div>
   );
