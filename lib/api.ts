@@ -211,6 +211,11 @@ export const api = {
       form.append("file", file);
       return request<{ imported: number }>(`/collections/${collectionID}/cards/import`, { method: "POST", body: form });
     },
+    importText: (collectionID: string, text: string) => {
+      const form = new FormData();
+      form.append("file", new Blob([text], { type: "text/csv" }), "import.csv");
+      return request<{ imported: number }>(`/collections/${collectionID}/cards/import`, { method: "POST", body: form });
+    },
   },
   tests: {
     add: (collectionID: string, question: string, options: TestOption[], position: number) =>
