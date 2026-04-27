@@ -15,7 +15,7 @@ const btnBase = "text-sm px-3 py-1.5 rounded-lg border transition-colors disable
 // ── Import panel ─────────────────────────────────────────────────────────────
 
 type ParsedRow = { question: string; answer: string };
-type ParseError = { line: number; text: string; cols: number };
+type ParseError = { line: number; text: string; message: string };
 
 function parseCSV(text: string): { rows: ParsedRow[]; errors: ParseError[] } {
   const rows: ParsedRow[] = [];
@@ -25,12 +25,16 @@ function parseCSV(text: string): { rows: ParsedRow[]; errors: ParseError[] } {
     if (!line) return;
     const parts = line.split(";");
     if (parts.length !== 2) {
-      errors.push({ line: i + 1, text: line, cols: parts.length });
+      errors.push({ line: i + 1, text: line, message: `expected 2 columns, got ${parts.length}` });
       return;
     }
     const q = parts[0].trim();
     const a = parts[1].trim();
-    if (q && a) rows.push({ question: q, answer: a });
+    if (!q || !a) {
+      errors.push({ line: i + 1, text: line, message: !q ? "front is empty" : "back is empty" });
+      return;
+    }
+    rows.push({ question: q, answer: a });
   });
   return { rows, errors };
 }
@@ -74,7 +78,7 @@ function ImportPanel({ collectionID, onDone, onCancel }: {
         <div className="flex flex-col gap-1">
           {errors.map((e) => (
             <p key={e.line} className="text-xs text-red-500 dark:text-red-400">
-              Line {e.line}: expected 2 columns, got {e.cols} — <span className="font-mono">{e.text.slice(0, 60)}{e.text.length > 60 ? "…" : ""}</span>
+              Line {e.line}: {e.message} — <span className="font-mono">{e.text.slice(0, 60)}{e.text.length > 60 ? "…" : ""}</span>
             </p>
           ))}
         </div>
