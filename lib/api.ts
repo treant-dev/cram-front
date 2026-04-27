@@ -224,5 +224,10 @@ export const api = {
       request<TestQuestion>(`/collections/${collectionID}/tests/${tqID}`, { method: "PUT", body: JSON.stringify({ question, options, position }) }),
     delete: (collectionID: string, tqID: string) =>
       request<void>(`/collections/${collectionID}/tests/${tqID}`, { method: "DELETE" }),
+    importText: (collectionID: string, text: string) => {
+      const form = new FormData();
+      form.append("file", new Blob([text], { type: "text/csv" }), "import.csv");
+      return request<{ imported: number }>(`/collections/${collectionID}/tests/import`, { method: "POST", body: form });
+    },
   },
 };
