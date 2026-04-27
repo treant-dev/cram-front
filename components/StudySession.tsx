@@ -164,7 +164,7 @@ export default function StudySession({ items, collectionID, doneTitle, error }: 
           </div>
 
           <div className="flex items-center justify-between">
-            <p className="text-xs text-gray-400 dark:text-slate-500">Press 1–{item.options.length} to select · Enter to confirm</p>
+            <p className="text-xs text-gray-400 dark:text-slate-500 hidden sm:block">Press 1–{item.options.length} to select · Enter to confirm</p>
             <div className="flex gap-2">
               {!submitted && selected.size > 0 && (
                 <button onClick={submit} className="border border-indigo-400 dark:border-indigo-600 text-indigo-600 dark:text-indigo-400 px-5 py-2 rounded-xl font-medium hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-colors">

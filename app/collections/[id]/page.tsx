@@ -414,14 +414,14 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
         {/* Header */}
         {editMode ? (
           <div className="flex flex-col gap-2 mb-4">
-            <div className="flex items-center justify-between gap-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
                   Draft
                 </span>
-                <span className="text-xs text-gray-400 dark:text-slate-500">Changes are saved as a draft until you publish</span>
+                <span className="text-xs text-gray-400 dark:text-slate-500 hidden sm:inline">Changes are saved as a draft until you publish</span>
               </div>
-              <div className="flex items-center gap-2 shrink-0">
+              <div className="flex items-center gap-2">
                 <button onClick={publish} disabled={saving} className={`${btnBase} bg-indigo-600 border-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-60`}>
                   {saving ? "Saving…" : "Publish"}
                 </button>

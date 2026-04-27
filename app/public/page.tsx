@@ -84,7 +84,7 @@ export default function CollectionsMarketPage() {
         ) : (
           <ul className="flex flex-col gap-3">
             {filtered.map((c) => (
-              <li key={c.ID} className="flex items-center gap-3 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl px-5 py-4 hover:border-indigo-400 dark:hover:border-indigo-500 hover:shadow-sm transition-all">
+              <li key={c.ID} className="flex flex-wrap items-center gap-3 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl px-5 py-4 hover:border-indigo-400 dark:hover:border-indigo-500 hover:shadow-sm transition-all">
                 <Link href={`/collections/${c.ID}`} className="flex-1 min-w-0">
                   <p className="font-semibold text-gray-900 dark:text-slate-100 truncate">{c.Title}</p>
                   {c.Description && <p className="text-sm text-gray-500 dark:text-slate-400 mt-0.5 truncate">{c.Description}</p>}
