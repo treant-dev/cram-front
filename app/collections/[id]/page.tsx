@@ -608,7 +608,7 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
                 onCancel={() => setShowImport(false)}
                 onDone={() => {
                   setShowImport(false);
-                  api.collections.get(draftCollectionID).then((draft) => setEditCards(draft.Cards ?? []));
+                  api.drafts.getOrCreate(collection.ID).then((draft) => setEditCards(draft.Cards ?? []));
                 }}
               />
             )}
