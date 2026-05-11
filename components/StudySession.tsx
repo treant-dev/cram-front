@@ -44,11 +44,9 @@ export default function StudySession({ items, collectionID, doneTitle, error }: 
     if (isCorrect) setScore((sc) => sc + 1);
     setResults((prev) => [
       ...prev,
-      {
-        card_id: item.sourceType === "card" ? item.sourceID : undefined,
-        tq_id: item.sourceType === "tq" ? item.sourceID : undefined,
-        correct: isCorrect,
-      },
+      item.sourceType === "card"
+        ? { card_id: item.sourceID, correct: isCorrect }
+        : { tq_id: item.sourceID, selected_option_texts: [...selected] },
     ]);
   }, [submitted, selected, item]);
 

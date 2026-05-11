@@ -109,7 +109,7 @@ export default function FlashcardsPage(props: PageProps<"/collections/[id]/flash
             <img src={card.Image} alt="" className="max-h-36 max-w-full rounded-lg object-contain" />
           )}
           <p className="text-xl font-medium text-gray-900 dark:text-slate-100">
-            {flipped ? card.Answer : card.Question}
+            {flipped ? card.Definition : card.Term}
           </p>
         </div>
 

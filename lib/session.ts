@@ -27,13 +27,13 @@ export function fromCards(cards: Card[]): SessionItem[] {
     cards.map((card) => {
       const distractors = shuffle(cards.filter((c) => c.ID !== card.ID))
         .slice(0, MAX_OPTIONS - 1)
-        .map((c) => c.Answer);
-      const options = shuffle([...distractors, card.Answer]).map((text) => ({
+        .map((c) => c.Definition);
+      const options = shuffle([...distractors, card.Definition]).map((text) => ({
         text,
-        isCorrect: text === card.Answer,
+        isCorrect: text === card.Definition,
       }));
       return {
-        question: card.Question,
+        question: card.Term,
         image: card.Image,
         options,
         multi: false,
@@ -68,22 +68,22 @@ export function fromTests(questions: TestQuestion[]): SessionItem[] {
 
 export function fromMix(cards: Card[], questions: TestQuestion[]): SessionItem[] {
   // Cross-domain distractor pools so every question gets up to MAX_OPTIONS options.
-  const cardAnswerPool = cards.map((c) => c.Answer);
+  const cardAnswerPool = cards.map((c) => c.Definition);
   const testWrongPool = questions.flatMap((q) =>
     q.Options.filter((o) => !o.is_correct).map((o) => o.text)
   );
 
   const cardItems = shuffle(cards).map((card) => {
-    const ownDistractors = cards.filter((c) => c.ID !== card.ID).map((c) => c.Answer);
-    const extra = testWrongPool.filter((t) => t !== card.Answer);
+    const ownDistractors = cards.filter((c) => c.ID !== card.ID).map((c) => c.Definition);
+    const extra = testWrongPool.filter((t) => t !== card.Definition);
     const pool = shuffle([...ownDistractors, ...extra]);
     const distractors = pool.slice(0, MAX_OPTIONS - 1);
-    const options = shuffle([...distractors, card.Answer]).map((text) => ({
+    const options = shuffle([...distractors, card.Definition]).map((text) => ({
       text,
-      isCorrect: text === card.Answer,
+      isCorrect: text === card.Definition,
     }));
     return {
-      question: card.Question,
+      question: card.Term,
       image: card.Image,
       options,
       multi: false,

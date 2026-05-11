@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { api, Collection, Card, TestQuestion, TestOption } from "@/lib/api";
+import { api, Collection, Card, TestQuestion, TestAnswer } from "@/lib/api";
 import { isLoggedIn } from "@/lib/auth";
 import Navbar from "@/components/Navbar";
 import ImageUpload from "@/components/ImageUpload";
@@ -260,11 +260,11 @@ function MasteryDot({ stats }: { stats: import("@/lib/api").CardStats | import("
 
 function CardForm({ initial, onSave, onCancel }: {
   initial?: Card;
-  onSave: (question: string, answer: string, image: string) => void;
+  onSave: (term: string, definition: string, image: string) => void;
   onCancel: () => void;
 }) {
-  const [question, setQuestion] = useState(initial?.Question ?? "");
-  const [answer, setAnswer] = useState(initial?.Answer ?? "");
+  const [question, setQuestion] = useState(initial?.Term ?? "");
+  const [answer, setAnswer] = useState(initial?.Definition ?? "");
   const [image, setImage] = useState(initial?.Image ?? "");
 
   function submit(e: React.FormEvent) {
@@ -292,11 +292,11 @@ function CardForm({ initial, onSave, onCancel }: {
 
 function TestForm({ initial, onSave, onCancel }: {
   initial?: TestQuestion;
-  onSave: (question: string, options: TestOption[], image: string) => void;
+  onSave: (question: string, options: TestAnswer[], image: string) => void;
   onCancel: () => void;
 }) {
   const [question, setQuestion] = useState(initial?.Question ?? "");
-  const [options, setOptions] = useState<TestOption[]>(
+  const [options, setOptions] = useState<TestAnswer[]>(
     initial?.Options ?? [{ text: "", is_correct: false }, { text: "", is_correct: false }]
   );
   const [image, setImage] = useState(initial?.Image ?? "");
@@ -304,10 +304,13 @@ function TestForm({ initial, onSave, onCancel }: {
   function setOptionText(i: number, text: string) {
     setOptions((prev) => prev.map((o, idx) => idx === i ? { ...o, text } : o));
   }
+  function setExplanation(i: number, explanation: string) {
+    setOptions((prev) => prev.map((o, idx) => idx === i ? { ...o, explanation } : o));
+  }
   function toggleCorrect(i: number) {
     setOptions((prev) => prev.map((o, idx) => idx === i ? { ...o, is_correct: !o.is_correct } : o));
   }
-  function addOption() { setOptions((prev) => [...prev, { text: "", is_correct: false }]); }
+  function addOption() { setOptions((prev) => [...prev, { text: "", is_correct: false, explanation: "" }]); }
   function removeOption(i: number) {
     if (options.length <= 2) return;
     setOptions((prev) => prev.filter((_, idx) => idx !== i));
@@ -328,12 +331,15 @@ function TestForm({ initial, onSave, onCancel }: {
       <div className="flex flex-col gap-2">
         <p className="text-xs text-gray-400 dark:text-slate-500">Options — check the correct one(s)</p>
         {options.map((opt, i) => (
-          <div key={i} className="flex items-center gap-2">
-            <input type="checkbox" checked={opt.is_correct} onChange={() => toggleCorrect(i)} className="w-4 h-4 accent-indigo-600 shrink-0" />
-            <input className={inputCls + " flex-1"} placeholder={`Option ${i + 1}`} value={opt.text} onChange={(e) => setOptionText(i, e.target.value)} maxLength={500} />
-            {options.length > 2 && (
-              <button type="button" onClick={() => removeOption(i)} className="text-gray-400 dark:text-slate-500 hover:text-red-500 text-lg leading-none">×</button>
-            )}
+          <div key={i} className="flex flex-col gap-1">
+            <div className="flex items-center gap-2">
+              <input type="checkbox" checked={opt.is_correct} onChange={() => toggleCorrect(i)} className="w-4 h-4 accent-indigo-600 shrink-0" />
+              <input className={inputCls + " flex-1"} placeholder={`Option ${i + 1}`} value={opt.text} onChange={(e) => setOptionText(i, e.target.value)} maxLength={500} />
+              {options.length > 2 && (
+                <button type="button" onClick={() => removeOption(i)} className="text-gray-400 dark:text-slate-500 hover:text-red-500 text-lg leading-none">×</button>
+              )}
+            </div>
+            <input className={inputCls + " ml-6 text-sm"} placeholder="Explanation (optional)" value={opt.explanation ?? ""} onChange={(e) => setExplanation(i, e.target.value)} maxLength={1000} />
           </div>
         ))}
         {options.length < 6 && (
@@ -435,8 +441,8 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
       is_public: metaIsPublic,
       cards: editCards.map((c) => ({
         id: c.ID.startsWith("new-") ? undefined : c.ID,
-        question: c.Question,
-        answer: c.Answer,
+        term: c.Term,
+        definition: c.Definition,
         image: c.Image,
       })),
       test_questions: editTests.map((t) => ({
@@ -507,11 +513,11 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
 
   // ── Local-only card operations (edit mode) ───────────────────────────────────
 
-  function addCard(question: string, answer: string, image: string) {
+  function addCard(term: string, definition: string, image: string) {
     const card: Card = {
       ID: `new-${Date.now()}`,
       CollectionID: draftCollectionID ?? "",
-      Question: question, Answer: answer, Image: image,
+      Term: term, Definition: definition, Image: image,
       Position: editCards.length,
       CreatedAt: "", UpdatedAt: "",
     };
@@ -519,9 +525,9 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
     setShowCardForm(false);
   }
 
-  function updateCard(question: string, answer: string, image: string) {
+  function updateCard(term: string, definition: string, image: string) {
     if (!editingCard) return;
-    setEditCards((prev) => prev.map((c) => c.ID === editingCard.ID ? { ...c, Question: question, Answer: answer, Image: image } : c));
+    setEditCards((prev) => prev.map((c) => c.ID === editingCard.ID ? { ...c, Term: term, Definition: definition, Image: image } : c));
     setEditingCard(null);
   }
 
@@ -531,7 +537,7 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
 
   // ── Local-only test operations (edit mode) ───────────────────────────────────
 
-  function addTest(question: string, options: TestOption[], image: string) {
+  function addTest(question: string, options: TestAnswer[], image: string) {
     const tq: TestQuestion = {
       ID: `new-${Date.now()}`,
       CollectionID: draftCollectionID ?? "",
@@ -543,7 +549,7 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
     setShowTestForm(false);
   }
 
-  function updateTest(question: string, options: TestOption[], image: string) {
+  function updateTest(question: string, options: TestAnswer[], image: string) {
     if (!editingTest) return;
     setEditTests((prev) => prev.map((t) => t.ID === editingTest.ID ? { ...t, Question: question, Options: options, Image: image } : t));
     setEditingTest(null);
@@ -754,9 +760,9 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
                           <img src={card.Image} alt="" className="w-10 h-10 rounded object-cover shrink-0" />
                         )}
                         <div className="min-w-0">
-                          <span className="font-medium text-gray-900 dark:text-slate-100">{card.Question}</span>
-                          <span className="text-gray-400 dark:text-slate-600 mx-2">→</span>
-                          <span className="text-gray-600 dark:text-slate-400 text-sm">{card.Answer}</span>
+                          <span className="font-bold text-gray-900 dark:text-slate-100">{card.Term}</span>
+                          <span className="text-gray-400 dark:text-slate-600 mx-2">-</span>
+                          <span className="text-gray-600 dark:text-slate-400 text-sm">{card.Definition}</span>
                         </div>
                       </div>
                       {editMode && (

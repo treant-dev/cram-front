@@ -72,9 +72,9 @@ export default function SharedCollectionPage(props: PageProps) {
                 <li key={card.ID} className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl px-5 py-3 flex items-center gap-4">
                   {card.Image && <img src={card.Image} alt="" className="w-10 h-10 rounded object-cover shrink-0" />}
                   <div className="min-w-0">
-                    <span className="font-medium text-gray-900 dark:text-slate-100">{card.Question}</span>
-                    <span className="text-gray-400 dark:text-slate-600 mx-2">→</span>
-                    <span className="text-gray-600 dark:text-slate-400 text-sm">{card.Answer}</span>
+                    <span className="font-bold text-gray-900 dark:text-slate-100">{card.Term}</span>
+                    <span className="text-gray-400 dark:text-slate-600 mx-2">-</span>
+                    <span className="text-gray-600 dark:text-slate-400 text-sm">{card.Definition}</span>
                   </div>
                 </li>
               ))}
