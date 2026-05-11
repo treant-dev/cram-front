@@ -24,9 +24,11 @@ const MAX_OPTIONS = 4;
 export function fromCards(cards: Card[]): SessionItem[] {
   return shuffle(
     cards.map((card) => {
+      const seen = new Set([card.Term]);
       const distractors = shuffle(cards.filter((c) => c.ID !== card.ID))
-        .slice(0, MAX_OPTIONS - 1)
-        .map((c) => c.Term);
+        .map((c) => c.Term)
+        .filter((t) => { if (seen.has(t)) return false; seen.add(t); return true; })
+        .slice(0, MAX_OPTIONS - 1);
       const options = shuffle([...distractors, card.Term]).map((text) => ({
         text,
         isCorrect: text === card.Term,
@@ -71,10 +73,13 @@ export function fromMix(cards: Card[], questions: TestQuestion[]): SessionItem[]
   );
 
   const cardItems = shuffle(cards).map((card) => {
+    const seen = new Set([card.Term]);
     const ownDistractors = cards.filter((c) => c.ID !== card.ID).map((c) => c.Term);
     const extra = testWrongPool.filter((t) => t !== card.Term);
     const pool = shuffle([...ownDistractors, ...extra]);
-    const distractors = pool.slice(0, MAX_OPTIONS - 1);
+    const distractors = pool
+      .filter((t) => { if (seen.has(t)) return false; seen.add(t); return true; })
+      .slice(0, MAX_OPTIONS - 1);
     const options = shuffle([...distractors, card.Term]).map((text) => ({
       text,
       isCorrect: text === card.Term,
