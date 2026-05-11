@@ -153,6 +153,7 @@ export default function StudySession({ items, collectionID, doneTitle, error }: 
                 selected={selected.has(opt.text)}
                 submitted={submitted}
                 isCorrect={opt.isCorrect}
+                explanation={opt.explanation}
                 onClick={() => toggle(opt.text)}
               />
             ))}

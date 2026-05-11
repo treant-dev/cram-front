@@ -3,7 +3,7 @@ import type { Card, TestQuestion } from "@/lib/api";
 export type SessionItem = {
   question: string;
   image: string;
-  options: { text: string; isCorrect: boolean }[];
+  options: { text: string; isCorrect: boolean; explanation?: string }[];
   multi: boolean;
   badge: { text: string; className: string };
   sourceID: string;
@@ -53,7 +53,7 @@ export function fromTests(questions: TestQuestion[]): SessionItem[] {
       return {
         question: q.Question,
         image: q.Image,
-        options: q.Options.map((o) => ({ text: o.text, isCorrect: o.is_correct })),
+        options: q.Options.map((o) => ({ text: o.text, isCorrect: o.is_correct, explanation: o.explanation })),
         multi,
         badge: multi
           ? { text: "Multiple answers", className: "bg-indigo-100 text-indigo-600" }
@@ -106,11 +106,12 @@ export function fromMix(cards: Card[], questions: TestQuestion[]): SessionItem[]
     ).slice(0, Math.max(0, neededWrong - wrongOpts.length));
     const allWrong = [
       ...wrongOpts,
-      ...extraWrong.map((t) => ({ text: t, is_correct: false })),
+      ...extraWrong.map((t) => ({ text: t, is_correct: false, explanation: undefined })),
     ].slice(0, neededWrong);
     const options = shuffle([...correctOpts, ...allWrong]).map((o) => ({
       text: o.text,
       isCorrect: o.is_correct,
+      explanation: o.explanation,
     }));
     return {
       question: q.Question,
