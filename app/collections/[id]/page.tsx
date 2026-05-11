@@ -14,7 +14,7 @@ const btnBase = "text-sm px-3 py-1.5 rounded-lg border transition-colors disable
 
 // ── Import panel ─────────────────────────────────────────────────────────────
 
-type ParsedRow = { question: string; answer: string };
+type ParsedRow = { term: string; definition: string };
 type ParseError = { line: number; text: string; message: string };
 
 function parseCSV(text: string): { rows: ParsedRow[]; errors: ParseError[] } {
@@ -28,13 +28,13 @@ function parseCSV(text: string): { rows: ParsedRow[]; errors: ParseError[] } {
       errors.push({ line: i + 1, text: line, message: `expected 2 columns, got ${parts.length}` });
       return;
     }
-    const q = parts[0].trim();
-    const a = parts[1].trim();
-    if (!q || !a) {
-      errors.push({ line: i + 1, text: line, message: !q ? "front is empty" : "back is empty" });
+    const term = parts[0].trim();
+    const definition = parts[1].trim();
+    if (!term || !definition) {
+      errors.push({ line: i + 1, text: line, message: !term ? "term is empty" : "definition is empty" });
       return;
     }
-    rows.push({ question: q, answer: a });
+    rows.push({ term, definition });
   });
   return { rows, errors };
 }
@@ -63,7 +63,7 @@ function ImportPanel({ collectionID, onDone, onCancel }: {
     <div className={formCls}>
       <div className="flex items-center justify-between">
         <p className="text-sm font-medium text-gray-700 dark:text-slate-300">Import cards</p>
-        <p className="text-xs text-gray-400 dark:text-slate-500">One card per line: <code className="bg-gray-100 dark:bg-slate-800 px-1 rounded">front;back</code></p>
+        <p className="text-xs text-gray-400 dark:text-slate-500">One card per line: <code className="bg-gray-100 dark:bg-slate-800 px-1 rounded">term;definition</code></p>
       </div>
 
       <textarea
@@ -90,9 +90,9 @@ function ImportPanel({ collectionID, onDone, onCancel }: {
           <div className="max-h-48 overflow-y-auto flex flex-col gap-1">
             {rows.map((r, i) => (
               <div key={i} className="flex items-center gap-2 text-xs bg-gray-50 dark:bg-slate-800 rounded px-3 py-1.5">
-                <span className="text-gray-900 dark:text-slate-100 font-medium truncate flex-1">{r.question}</span>
-                <span className="text-gray-400 dark:text-slate-600 shrink-0">→</span>
-                <span className="text-gray-600 dark:text-slate-400 truncate flex-1">{r.answer}</span>
+                <span className="text-gray-900 dark:text-slate-100 font-bold truncate flex-1">{r.term}</span>
+                <span className="text-gray-400 dark:text-slate-600 shrink-0">-</span>
+                <span className="text-gray-600 dark:text-slate-400 truncate flex-1">{r.definition}</span>
               </div>
             ))}
           </div>
@@ -263,20 +263,20 @@ function CardForm({ initial, onSave, onCancel }: {
   onSave: (term: string, definition: string, image: string) => void;
   onCancel: () => void;
 }) {
-  const [question, setQuestion] = useState(initial?.Term ?? "");
-  const [answer, setAnswer] = useState(initial?.Definition ?? "");
+  const [term, setTerm] = useState(initial?.Term ?? "");
+  const [definition, setDefinition] = useState(initial?.Definition ?? "");
   const [image, setImage] = useState(initial?.Image ?? "");
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!question.trim() || !answer.trim()) return;
-    onSave(question.trim(), answer.trim(), image);
+    if (!term.trim() || !definition.trim()) return;
+    onSave(term.trim(), definition.trim(), image);
   }
 
   return (
     <form onSubmit={submit} className={formCls}>
-      <input className={inputCls} placeholder="Front" value={question} onChange={(e) => setQuestion(e.target.value)} required autoFocus={!initial} maxLength={2000} />
-      <input className={inputCls} placeholder="Back" value={answer} onChange={(e) => setAnswer(e.target.value)} required maxLength={2000} />
+      <input className={inputCls} placeholder="Term" value={term} onChange={(e) => setTerm(e.target.value)} required autoFocus={!initial} maxLength={2000} />
+      <input className={inputCls} placeholder="Definition" value={definition} onChange={(e) => setDefinition(e.target.value)} required maxLength={2000} />
       <ImageUpload value={image} onChange={setImage} />
       <div className="flex gap-2 justify-end">
         <button type="button" onClick={onCancel} className="text-sm text-gray-500 dark:text-slate-400 px-3 py-1 hover:text-gray-700 dark:hover:text-slate-200">Cancel</button>
