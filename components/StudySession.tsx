@@ -129,11 +129,8 @@ export default function StudySession({ items, collectionID, doneTitle, error }: 
       <Navbar />
       <main className="flex-1 flex flex-col items-center justify-center px-4">
         <div className="w-full max-w-lg flex flex-col gap-5">
-          <div className="relative flex items-center justify-between">
+          <div className="flex items-center justify-between">
             <p className="text-sm text-gray-400 dark:text-slate-500">{index + 1} / {items.length}</p>
-            {item.frontLabel && (
-              <p className="absolute left-1/2 -translate-x-1/2 text-xs text-gray-400 dark:text-slate-500 uppercase tracking-wide">Front</p>
-            )}
             <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${item.badge.className}`}>
               {item.badge.text}
             </span>

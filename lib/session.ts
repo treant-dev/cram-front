@@ -5,7 +5,6 @@ export type SessionItem = {
   image: string;
   options: { text: string; isCorrect: boolean }[];
   multi: boolean;
-  frontLabel: boolean;
   badge: { text: string; className: string };
   sourceID: string;
   sourceType: "card" | "tq";
@@ -27,17 +26,16 @@ export function fromCards(cards: Card[]): SessionItem[] {
     cards.map((card) => {
       const distractors = shuffle(cards.filter((c) => c.ID !== card.ID))
         .slice(0, MAX_OPTIONS - 1)
-        .map((c) => c.Definition);
-      const options = shuffle([...distractors, card.Definition]).map((text) => ({
+        .map((c) => c.Term);
+      const options = shuffle([...distractors, card.Term]).map((text) => ({
         text,
-        isCorrect: text === card.Definition,
+        isCorrect: text === card.Term,
       }));
       return {
-        question: card.Term,
+        question: card.Definition,
         image: card.Image,
         options,
         multi: false,
-        frontLabel: true,
         badge: { text: "Single answer", className: "bg-gray-100 text-gray-500" },
         sourceID: card.ID,
         sourceType: "card" as const,
@@ -55,7 +53,6 @@ export function fromTests(questions: TestQuestion[]): SessionItem[] {
         image: q.Image,
         options: q.Options.map((o) => ({ text: o.text, isCorrect: o.is_correct })),
         multi,
-        frontLabel: false,
         badge: multi
           ? { text: "Multiple answers", className: "bg-indigo-100 text-indigo-600" }
           : { text: "Single answer", className: "bg-gray-100 text-gray-500" },
@@ -68,26 +65,25 @@ export function fromTests(questions: TestQuestion[]): SessionItem[] {
 
 export function fromMix(cards: Card[], questions: TestQuestion[]): SessionItem[] {
   // Cross-domain distractor pools so every question gets up to MAX_OPTIONS options.
-  const cardAnswerPool = cards.map((c) => c.Definition);
+  const cardAnswerPool = cards.map((c) => c.Term);
   const testWrongPool = questions.flatMap((q) =>
     q.Options.filter((o) => !o.is_correct).map((o) => o.text)
   );
 
   const cardItems = shuffle(cards).map((card) => {
-    const ownDistractors = cards.filter((c) => c.ID !== card.ID).map((c) => c.Definition);
-    const extra = testWrongPool.filter((t) => t !== card.Definition);
+    const ownDistractors = cards.filter((c) => c.ID !== card.ID).map((c) => c.Term);
+    const extra = testWrongPool.filter((t) => t !== card.Term);
     const pool = shuffle([...ownDistractors, ...extra]);
     const distractors = pool.slice(0, MAX_OPTIONS - 1);
-    const options = shuffle([...distractors, card.Definition]).map((text) => ({
+    const options = shuffle([...distractors, card.Term]).map((text) => ({
       text,
-      isCorrect: text === card.Definition,
+      isCorrect: text === card.Term,
     }));
     return {
-      question: card.Term,
+      question: card.Definition,
       image: card.Image,
       options,
       multi: false,
-      frontLabel: true,
       badge: { text: "Card", className: "bg-purple-100 text-purple-600" },
       sourceID: card.ID,
       sourceType: "card" as const,
@@ -116,7 +112,6 @@ export function fromMix(cards: Card[], questions: TestQuestion[]): SessionItem[]
       image: q.Image,
       options,
       multi,
-      frontLabel: false,
       badge: multi
         ? { text: "Multiple answers", className: "bg-indigo-100 text-indigo-600" }
         : { text: "Single answer", className: "bg-gray-100 text-gray-500" },
