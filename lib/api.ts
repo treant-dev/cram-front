@@ -41,8 +41,8 @@ export type DraftBody = {
   title: string;
   description: string;
   is_public: boolean;
-  cards: { id?: string; question: string; answer: string; image: string }[];
-  test_questions: { id?: string; question: string; options: TestOption[]; image: string }[];
+  cards: { id?: string; term: string; definition: string; image: string }[];
+  test_questions: { id?: string; question: string; options: TestAnswer[]; image: string }[];
 };
 
 export type PublicCollection = Collection & {
@@ -68,8 +68,8 @@ export type CardStats = {
 export type Card = {
   ID: string;
   CollectionID: string;
-  Question: string;
-  Answer: string;
+  Term: string;
+  Definition: string;
   Image: string;
   Position: number;
   Stats?: CardStats | null;
@@ -84,16 +84,18 @@ export type TQStats = {
   LastSeen: string | null;
 };
 
-export type TestOption = {
+export type TestAnswer = {
+  id?: string;
   text: string;
   is_correct: boolean;
+  explanation?: string;
 };
 
 export type TestQuestion = {
   ID: string;
   CollectionID: string;
   Question: string;
-  Options: TestOption[];
+  Options: TestAnswer[];
   Image: string;
   Position: number;
   Stats?: TQStats | null;
@@ -104,7 +106,8 @@ export type TestQuestion = {
 export type StudyAnswer = {
   card_id?: string;
   tq_id?: string;
-  correct: boolean;
+  correct?: boolean;               // cards only (self-assessed)
+  selected_option_texts?: string[]; // test questions only (server-verified)
 };
 
 export type DailyBucket = {
@@ -200,10 +203,10 @@ export const api = {
       request<void>(`/admin/collections/${collectionID}`, { method: "DELETE" }),
   },
   cards: {
-    add: (collectionID: string, question: string, answer: string, position: number) =>
-      request<Card>(`/collections/${collectionID}/cards`, { method: "POST", body: JSON.stringify({ question, answer, position }) }),
-    update: (collectionID: string, cardID: string, question: string, answer: string, position: number) =>
-      request<Card>(`/collections/${collectionID}/cards/${cardID}`, { method: "PUT", body: JSON.stringify({ question, answer, position }) }),
+    add: (collectionID: string, term: string, definition: string, position: number) =>
+      request<Card>(`/collections/${collectionID}/cards`, { method: "POST", body: JSON.stringify({ term, definition, position }) }),
+    update: (collectionID: string, cardID: string, term: string, definition: string, position: number) =>
+      request<Card>(`/collections/${collectionID}/cards/${cardID}`, { method: "PUT", body: JSON.stringify({ term, definition, position }) }),
     delete: (collectionID: string, cardID: string) =>
       request<void>(`/collections/${collectionID}/cards/${cardID}`, { method: "DELETE" }),
     import: (collectionID: string, file: File) => {
@@ -218,9 +221,9 @@ export const api = {
     },
   },
   tests: {
-    add: (collectionID: string, question: string, options: TestOption[], position: number) =>
+    add: (collectionID: string, question: string, options: TestAnswer[], position: number) =>
       request<TestQuestion>(`/collections/${collectionID}/tests`, { method: "POST", body: JSON.stringify({ question, options, position }) }),
-    update: (collectionID: string, tqID: string, question: string, options: TestOption[], position: number) =>
+    update: (collectionID: string, tqID: string, question: string, options: TestAnswer[], position: number) =>
       request<TestQuestion>(`/collections/${collectionID}/tests/${tqID}`, { method: "PUT", body: JSON.stringify({ question, options, position }) }),
     delete: (collectionID: string, tqID: string) =>
       request<void>(`/collections/${collectionID}/tests/${tqID}`, { method: "DELETE" }),
