@@ -13,8 +13,7 @@ function formatNextReview(dateStr: string): string {
 function dotColor(level: number): string {
   if (level === 1) return "bg-red-400";
   if (level <= 4) return "bg-yellow-400";
-  if (level <= 6) return "bg-green-400";
-  return "bg-emerald-500";
+  return "bg-green-400";
 }
 
 type Props = {
@@ -29,7 +28,10 @@ export default function LevelDot({ level, nextReviewAt }: Props) {
 
   return (
     <div className="relative group shrink-0">
-      <span className={`block w-2.5 h-2.5 rounded-full cursor-default ${dotColor(level)}`} />
+      {level === 7
+        ? <span className="block text-sky-400 cursor-default leading-none" style={{ fontSize: "11px" }}>★</span>
+        : <span className={`block w-2.5 h-2.5 rounded-full cursor-default ${dotColor(level)}`} />
+      }
       <div className="absolute right-0 bottom-full mb-2 z-10 pointer-events-none hidden group-hover:block">
         <div className="bg-gray-900 dark:bg-slate-700 text-white text-xs rounded-lg px-2.5 py-1.5 whitespace-nowrap shadow-lg">
           <p className="font-medium">{label}</p>
