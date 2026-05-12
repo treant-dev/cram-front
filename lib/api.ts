@@ -110,6 +110,11 @@ export type StudyAnswer = {
   selected_option_texts?: string[]; // test questions only (server-verified)
 };
 
+export type ProgressData = {
+  cards: Record<string, number>;          // cardID → level (1-7)
+  test_questions: Record<string, number>; // tqID → level (1-7)
+};
+
 export type DailyBucket = {
   date: string;
   correct: number;
@@ -180,6 +185,15 @@ export const api = {
       }),
     history: (collectionID: string, days = 30) =>
       request<StudyHistoryData>(`/collections/${collectionID}/history?days=${days}`),
+  },
+  progress: {
+    get: (collectionID: string) =>
+      request<ProgressData>(`/collections/${collectionID}/progress`),
+    update: (collectionID: string, itemType: "card" | "tq", itemID: string, correct: boolean, confidenceDelta: -1 | 0 | 1) =>
+      request<{ level: number; next_review_at: string }>(`/collections/${collectionID}/progress`, {
+        method: "POST",
+        body: JSON.stringify({ item_type: itemType, item_id: itemID, correct, confidence_delta: confidenceDelta }),
+      }),
   },
   users: {
     list: () => request<UserProfile[]>("/users"),
