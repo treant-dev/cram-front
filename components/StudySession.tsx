@@ -15,9 +15,12 @@ type Props = {
   error?: string;
 };
 
-function applyAnswer(level: number, correct: boolean): number {
+function applyAnswer(level: number, correct: boolean, nextReviewAt?: string): number {
   if (level === 7) return 7;
-  if (correct) return Math.min(level + 1, 6);
+  if (correct) {
+    if (nextReviewAt && new Date(nextReviewAt) > new Date()) return level;
+    return Math.min(level + 1, 6);
+  }
   return Math.max(1, Math.floor(level / 2));
 }
 
@@ -87,7 +90,7 @@ export default function StudySession({ items, collectionID, doneTitle, error }: 
     const correct = selected.size === correctSet.size && [...selected].every((s) => correctSet.has(s));
     setIsCorrect(correct);
     setSubmitted(true);
-    setDisplayLevel(applyAnswer(currentLevel, correct));
+    setDisplayLevel(applyAnswer(currentLevel, correct, currentEntry?.next_review_at));
     setConfidenceDelta(null);
     if (correct) setScore((sc) => sc + 1);
     setResults((prev) => [
@@ -101,7 +104,7 @@ export default function StudySession({ items, collectionID, doneTitle, error }: 
   const next = useCallback(() => {
     if (!item) return;
     const delta = confidenceDelta ?? 0;
-    const finalLevel = displayLevel != null ? applyConfidence(displayLevel, delta) : applyAnswer(currentLevel, isCorrect);
+    const finalLevel = displayLevel != null ? applyConfidence(displayLevel, delta) : applyAnswer(currentLevel, isCorrect, currentEntry?.next_review_at);
     api.progress.update(collectionID, item.sourceType, item.sourceID, isCorrect, delta as -1 | 0 | 1)
       .then((res) => {
         setProgress((prev) => ({ ...prev, [`${item.sourceType}:${item.sourceID}`]: { level: res.level, next_review_at: res.next_review_at } }));
