@@ -58,13 +58,6 @@ export type UserProfile = {
   Collections: Collection[];
 };
 
-export type CardStats = {
-  Correct: number;
-  Incorrect: number;
-  Streak: number;
-  LastSeen: string | null;
-};
-
 export type Card = {
   ID: string;
   CollectionID: string;
@@ -72,16 +65,8 @@ export type Card = {
   Definition: string;
   Image: string;
   Position: number;
-  Stats?: CardStats | null;
   CreatedAt: string;
   UpdatedAt: string;
-};
-
-export type TQStats = {
-  Correct: number;
-  Incorrect: number;
-  Streak: number;
-  LastSeen: string | null;
 };
 
 export type TestAnswer = {
@@ -98,7 +83,6 @@ export type TestQuestion = {
   Options: TestAnswer[];
   Image: string;
   Position: number;
-  Stats?: TQStats | null;
   CreatedAt: string;
   UpdatedAt: string;
 };
@@ -108,6 +92,26 @@ export type StudyAnswer = {
   tq_id?: string;
   correct?: boolean;               // cards only (self-assessed)
   selected_option_texts?: string[]; // test questions only (server-verified)
+};
+
+export type ProgressEntry = {
+  level: number;
+  next_review_at: string;
+  last_review_at?: string | null;
+};
+
+export type BlitzItem =
+  | { type: "card"; card: Card }
+  | { type: "tq"; tq: TestQuestion };
+
+export type BlitzResponse = {
+  items: BlitzItem[];
+  card_pool: { ID: string; Term: string }[];
+};
+
+export type ProgressData = {
+  cards: Record<string, ProgressEntry>;
+  test_questions: Record<string, ProgressEntry>;
 };
 
 export type DailyBucket = {
@@ -181,6 +185,15 @@ export const api = {
     history: (collectionID: string, days = 30) =>
       request<StudyHistoryData>(`/collections/${collectionID}/history?days=${days}`),
   },
+  progress: {
+    get: (collectionID: string) =>
+      request<ProgressData>(`/collections/${collectionID}/progress`),
+    update: (collectionID: string, itemType: "card" | "tq", itemID: string, correct: boolean, confidenceDelta: -1 | 0 | 1) =>
+      request<{ level: number; next_review_at: string }>(`/collections/${collectionID}/progress`, {
+        method: "POST",
+        body: JSON.stringify({ item_type: itemType, item_id: itemID, correct, confidence_delta: confidenceDelta }),
+      }),
+  },
   users: {
     list: () => request<UserProfile[]>("/users"),
   },
@@ -232,5 +245,9 @@ export const api = {
       form.append("file", new Blob([text], { type: "text/csv" }), "import.csv");
       return request<{ imported: number }>(`/collections/${collectionID}/tests/import`, { method: "POST", body: form });
     },
+  },
+  blitz: {
+    get: (collectionID: string) =>
+      request<BlitzResponse>(`/collections/${collectionID}/blitz`),
   },
 };

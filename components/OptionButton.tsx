@@ -5,10 +5,11 @@ type Props = {
   selected: boolean;
   submitted: boolean;
   isCorrect: boolean;
+  explanation?: string;
   onClick: () => void;
 };
 
-export default function OptionButton({ index, text, multi, selected, submitted, isCorrect, onClick }: Props) {
+export default function OptionButton({ index, text, multi, selected, submitted, isCorrect, explanation, onClick }: Props) {
   function containerClass() {
     const base = "w-full text-left px-4 py-3 rounded-xl border text-sm font-medium transition-colors flex items-center gap-3 ";
     if (!submitted) return base + (selected
@@ -31,24 +32,29 @@ export default function OptionButton({ index, text, multi, selected, submitted, 
   return (
     <div className="relative">
       <span className="absolute right-full mr-2 top-1/2 -translate-y-1/2 w-5 text-center text-xs font-mono text-gray-400 dark:text-slate-500">{index + 1}</span>
-      <button onClick={onClick} className={containerClass()}>
-        <span className={indicatorClass()}>
-          {selected && !submitted && (
-            multi
-              ? <svg className="w-2.5 h-2.5 text-white" fill="currentColor" viewBox="0 0 10 10"><path d="M1.5 5l2.5 2.5 4.5-4.5" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg>
-              : <span className="w-1.5 h-1.5 rounded-full bg-white block" />
-          )}
-          {submitted && (isCorrect || selected) && (
-            <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 10 10">
-              {isCorrect
-                ? <path d="M1.5 5l2.5 2.5 4.5-4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                : <><path d="M2 2l6 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><path d="M8 2l-6 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></>
-              }
-            </svg>
-          )}
-        </span>
-        {text}
-      </button>
+      <div className="flex flex-col gap-1">
+        <button onClick={onClick} className={containerClass()}>
+          <span className={indicatorClass()}>
+            {selected && !submitted && (
+              multi
+                ? <svg className="w-2.5 h-2.5 text-white" fill="currentColor" viewBox="0 0 10 10"><path d="M1.5 5l2.5 2.5 4.5-4.5" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                : <span className="w-1.5 h-1.5 rounded-full bg-white block" />
+            )}
+            {submitted && (isCorrect || selected) && (
+              <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 10 10">
+                {isCorrect
+                  ? <path d="M1.5 5l2.5 2.5 4.5-4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                  : <><path d="M2 2l6 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><path d="M8 2l-6 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></>
+                }
+              </svg>
+            )}
+          </span>
+          {text}
+        </button>
+        {submitted && explanation && (
+          <p className="text-xs text-gray-500 dark:text-slate-400 px-4 pb-1">{explanation}</p>
+        )}
+      </div>
     </div>
   );
 }

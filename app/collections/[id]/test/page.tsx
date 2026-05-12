@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { isLoggedIn } from "@/lib/auth";
-import { fromTests, type SessionItem } from "@/lib/session";
+import { fromMix, type SessionItem } from "@/lib/session";
 import StudySession from "@/components/StudySession";
 
 export default function TestPage(props: PageProps<"/collections/[id]/test">) {
@@ -18,7 +18,7 @@ export default function TestPage(props: PageProps<"/collections/[id]/test">) {
     props.params.then(({ id }) => {
       setCollectionID(id);
       return api.collections.get(id);
-    }).then((s) => setItems(fromTests(s.TestQuestions ?? []))).catch(() => setError("Failed to load collection"));
+    }).then((s) => setItems(fromMix(s.Cards ?? [], s.TestQuestions ?? []))).catch(() => setError("Failed to load collection"));
   }, [router, props.params]);
 
   return <StudySession items={items} collectionID={collectionID} doneTitle="Test complete!" error={error} />;

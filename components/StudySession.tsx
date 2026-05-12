@@ -4,7 +4,8 @@ import { useEffect, useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
 import OptionButton from "@/components/OptionButton";
-import { api, type StudyAnswer } from "@/lib/api";
+import LevelDot from "@/components/LevelDot";
+import { api, type StudyAnswer, type ProgressEntry } from "@/lib/api";
 import type { SessionItem } from "@/lib/session";
 
 type Props = {
@@ -14,15 +15,61 @@ type Props = {
   error?: string;
 };
 
+function applyAnswer(level: number, correct: boolean, nextReviewAt?: string): number {
+  if (level === 7) return 7;
+  if (correct) {
+    if (level === 1) return 2;
+    if (nextReviewAt && new Date(nextReviewAt) > new Date()) return level;
+    return Math.min(level + 1, 6);
+  }
+  return Math.max(1, Math.floor(level / 2));
+}
+
+function applyConfidence(level: number, delta: number): number {
+  if (delta === 1) return level >= 6 ? 7 : level + 1;
+  if (delta === -1) return Math.max(1, Math.floor(level / 2));
+  return level;
+}
+
+function nextReviewFromLevel(level: number): string {
+  const now = Date.now();
+  const day = 86400000;
+  const dates: Record<number, number> = {
+    1: now + day,
+    2: now + 2 * day,
+    3: now + 7 * day,
+    4: now + 14 * day,
+    5: now + 30 * day,
+    6: now + 180 * day,
+  };
+  if (level === 7) return "2099-12-31T00:00:00Z";
+  return new Date(dates[level] ?? now + day).toISOString();
+}
+
 export default function StudySession({ items, collectionID, doneTitle, error }: Props) {
   const router = useRouter();
   const sessionID = useMemo(() => crypto.randomUUID(), []);
   const [index, setIndex] = useState(0);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [submitted, setSubmitted] = useState(false);
+  const [isCorrect, setIsCorrect] = useState(false);
   const [score, setScore] = useState(0);
   const [done, setDone] = useState(false);
   const [results, setResults] = useState<StudyAnswer[]>([]);
+
+  // Progress state: keyed by "card:<id>" or "tq:<id>"
+  const [progress, setProgress] = useState<Record<string, ProgressEntry>>({});
+  const [displayLevel, setDisplayLevel] = useState<number | null>(null);
+  const [confidenceDelta, setConfidenceDelta] = useState<-1 | 0 | 1 | null>(null);
+
+  useEffect(() => {
+    api.progress.get(collectionID).then((data) => {
+      const merged: Record<string, ProgressEntry> = {};
+      for (const [id, entry] of Object.entries(data.cards)) merged[`card:${id}`] = entry;
+      for (const [id, entry] of Object.entries(data.test_questions)) merged[`tq:${id}`] = entry;
+      setProgress(merged);
+    }).catch(() => {});
+  }, [collectionID]);
 
   useEffect(() => {
     if (!done || !collectionID) return;
@@ -35,27 +82,51 @@ export default function StudySession({ items, collectionID, doneTitle, error }: 
   }, [done, collectionID]);
 
   const item = items[index];
+  const currentEntry = item ? (progress[`${item.sourceType}:${item.sourceID}`] ?? null) : null;
+  const currentLevel = currentEntry?.level ?? 1;
 
   const submit = useCallback(() => {
     if (submitted || selected.size === 0 || !item) return;
     const correctSet = new Set(item.options.filter((o) => o.isCorrect).map((o) => o.text));
-    const isCorrect = selected.size === correctSet.size && [...selected].every((s) => correctSet.has(s));
+    const correct = selected.size === correctSet.size && [...selected].every((s) => correctSet.has(s));
+    setIsCorrect(correct);
     setSubmitted(true);
-    if (isCorrect) setScore((sc) => sc + 1);
+    setDisplayLevel(applyAnswer(currentLevel, correct, currentEntry?.next_review_at));
+    setConfidenceDelta(null);
+    if (correct) setScore((sc) => sc + 1);
     setResults((prev) => [
       ...prev,
       item.sourceType === "card"
-        ? { card_id: item.sourceID, correct: isCorrect }
+        ? { card_id: item.sourceID, correct }
         : { tq_id: item.sourceID, selected_option_texts: [...selected] },
     ]);
-  }, [submitted, selected, item]);
+  }, [submitted, selected, item, currentLevel]);
 
   const next = useCallback(() => {
+    if (!item) return;
+    const delta = confidenceDelta ?? 0;
+    const finalLevel = displayLevel != null ? applyConfidence(displayLevel, delta) : applyAnswer(currentLevel, isCorrect, currentEntry?.next_review_at);
+    api.progress.update(collectionID, item.sourceType, item.sourceID, isCorrect, delta as -1 | 0 | 1)
+      .then((res) => {
+        setProgress((prev) => ({ ...prev, [`${item.sourceType}:${item.sourceID}`]: { level: res.level, next_review_at: res.next_review_at } }));
+      })
+      .catch(() => {
+        setProgress((prev) => ({ ...prev, [`${item.sourceType}:${item.sourceID}`]: { level: finalLevel, next_review_at: nextReviewFromLevel(finalLevel) } }));
+      });
+
     if (index + 1 >= items.length) { setDone(true); return; }
     setIndex((i) => i + 1);
     setSelected(new Set());
     setSubmitted(false);
-  }, [index, items.length]);
+    setDisplayLevel(null);
+    setConfidenceDelta(null);
+  }, [index, items.length, item, isCorrect, confidenceDelta, displayLevel, currentLevel, collectionID]);
+
+  function handleConfidence(delta: -1 | 1) {
+    if (confidenceDelta !== null || displayLevel === null) return;
+    setConfidenceDelta(delta);
+    setDisplayLevel(applyConfidence(displayLevel, delta));
+  }
 
   function toggle(text: string) {
     if (submitted) return;
@@ -124,6 +195,8 @@ export default function StudySession({ items, collectionID, doneTitle, error }: 
     );
   }
 
+  const shownLevel = displayLevel ?? currentLevel;
+
   return (
     <div className="min-h-screen flex flex-col">
       <Navbar />
@@ -131,9 +204,12 @@ export default function StudySession({ items, collectionID, doneTitle, error }: 
         <div className="w-full max-w-lg flex flex-col gap-5">
           <div className="flex items-center justify-between">
             <p className="text-sm text-gray-400 dark:text-slate-500">{index + 1} / {items.length}</p>
-            <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${item.badge.className}`}>
-              {item.badge.text}
-            </span>
+            <div className="flex items-center gap-2">
+              <LevelDot level={shownLevel} nextReviewAt={nextReviewFromLevel(shownLevel)} />
+              <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${item.badge.className}`}>
+                {item.badge.text}
+              </span>
+            </div>
           </div>
 
           <div className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-2xl p-6 text-center shadow-sm flex flex-col items-center gap-4">
@@ -153,6 +229,7 @@ export default function StudySession({ items, collectionID, doneTitle, error }: 
                 selected={selected.has(opt.text)}
                 submitted={submitted}
                 isCorrect={opt.isCorrect}
+                explanation={opt.explanation}
                 onClick={() => toggle(opt.text)}
               />
             ))}
@@ -160,7 +237,39 @@ export default function StudySession({ items, collectionID, doneTitle, error }: 
 
           <div className="flex items-center justify-between">
             <p className="text-xs text-gray-400 dark:text-slate-500 hidden sm:block">Press 1–{item.options.length} to select · Enter to confirm</p>
-            <div className="flex gap-2">
+            <div className="flex items-center gap-2 ml-auto">
+              {submitted && (
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => handleConfidence(-1)}
+                    disabled={confidenceDelta !== null}
+                    title="Lower level"
+                    className={`w-8 h-8 rounded-lg border text-sm font-bold transition-colors ${
+                      confidenceDelta === -1
+                        ? "border-red-400 bg-red-50 text-red-600 dark:border-red-600 dark:bg-red-900/30 dark:text-red-400"
+                        : confidenceDelta !== null
+                        ? "border-gray-200 dark:border-slate-700 text-gray-300 dark:text-slate-600 cursor-not-allowed"
+                        : "border-gray-300 dark:border-slate-600 text-gray-500 dark:text-slate-400 hover:border-red-400 hover:bg-red-50 dark:hover:border-red-600 dark:hover:bg-red-900/20"
+                    }`}
+                  >
+                    −
+                  </button>
+                  <button
+                    onClick={() => handleConfidence(1)}
+                    disabled={confidenceDelta !== null}
+                    title="Raise level"
+                    className={`w-8 h-8 rounded-lg border text-sm font-bold transition-colors ${
+                      confidenceDelta === 1
+                        ? "border-green-400 bg-green-50 text-green-600 dark:border-green-600 dark:bg-green-900/30 dark:text-green-400"
+                        : confidenceDelta !== null
+                        ? "border-gray-200 dark:border-slate-700 text-gray-300 dark:text-slate-600 cursor-not-allowed"
+                        : "border-gray-300 dark:border-slate-600 text-gray-500 dark:text-slate-400 hover:border-green-400 hover:bg-green-50 dark:hover:border-green-600 dark:hover:bg-green-900/20"
+                    }`}
+                  >
+                    +
+                  </button>
+                </div>
+              )}
               {!submitted && selected.size > 0 && (
                 <button onClick={submit} className="border border-indigo-400 dark:border-indigo-600 text-indigo-600 dark:text-indigo-400 px-5 py-2 rounded-xl font-medium hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-colors">
                   Confirm

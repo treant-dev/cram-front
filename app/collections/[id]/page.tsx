@@ -3,7 +3,8 @@
 import { useEffect, useState, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { api, Collection, Card, TestQuestion, TestAnswer } from "@/lib/api";
+import { api, Collection, Card, TestQuestion, TestAnswer, ProgressData, ProgressEntry } from "@/lib/api";
+import LevelDot from "@/components/LevelDot";
 import { isLoggedIn } from "@/lib/auth";
 import Navbar from "@/components/Navbar";
 import ImageUpload from "@/components/ImageUpload";
@@ -242,19 +243,6 @@ function trunc(s: string, n: number) {
   return s.length > n ? s.slice(0, n) + "…" : s;
 }
 
-function MasteryDot({ stats }: { stats: import("@/lib/api").CardStats | import("@/lib/api").TQStats | null }) {
-  if (!stats) return null;
-  const total = stats.Correct + stats.Incorrect;
-  if (total === 0) return null;
-  const rate = stats.Correct / total;
-  const cls = rate >= 0.8 ? "bg-green-400" : rate >= 0.5 ? "bg-yellow-400" : "bg-red-400";
-  return (
-    <span
-      className={`w-2 h-2 rounded-full shrink-0 ${cls}`}
-      title={`${stats.Correct} correct · ${stats.Incorrect} incorrect · streak ${stats.Streak}`}
-    />
-  );
-}
 
 // ── Card form ────────────────────────────────────────────────────────────────
 
@@ -393,6 +381,7 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
   const [shareToken, setShareToken] = useState<string | null>(null);
   const [shareLoading, setShareLoading] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
+  const [itemProgress, setItemProgress] = useState<Record<string, ProgressEntry>>({});
 
   useEffect(() => {
     if (!isLoggedIn()) { router.replace("/"); return; }
@@ -404,6 +393,12 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
         setHasDraft(true);
         setDraftCollectionID(col.DraftID);
       }
+      api.progress.get(col.ID).then((data: ProgressData) => {
+        const merged: Record<string, ProgressEntry> = {};
+        for (const [id, entry] of Object.entries(data.cards)) merged[`card:${id}`] = entry;
+        for (const [id, entry] of Object.entries(data.test_questions)) merged[`tq:${id}`] = entry;
+        setItemProgress(merged);
+      }).catch(() => {});
     }).catch(() => setError("Failed to load collection"));
   }, [router, props.params]);
 
@@ -639,8 +634,13 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
   const cards = editMode ? editCards : (collection.Cards ?? []);
   const tests = editMode ? editTests : (collection.TestQuestions ?? []);
   const hasFlashcards = cards.length >= 2;
-  const hasTest = tests.length >= 1;
-  const hasQuiz = cards.length >= 1 && tests.length >= 1;
+  const hasMix = cards.length >= 1 && tests.length >= 1;
+  const hasBlitz = cards.length + tests.length >= 1;
+  const allItemKeys = [
+    ...cards.map((c) => `card:${c.ID}`),
+    ...tests.map((t) => `tq:${t.ID}`),
+  ];
+  const allMastered = allItemKeys.length > 0 && allItemKeys.every((k) => itemProgress[k]?.level === 7);
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -703,19 +703,20 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
         )}
 
         {/* Study mode buttons */}
-        {!editMode && (hasFlashcards || hasTest || hasQuiz) && (
+        {!editMode && (hasFlashcards || hasMix || hasBlitz) && (
           <div className="flex gap-3 mb-8 flex-wrap">
-            {hasFlashcards && (
-              <Link href={`/collections/${collection.ID}/flashcards`} className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors">Cards</Link>
+            {hasBlitz && (
+              allMastered ? (
+                <span className="bg-indigo-300 dark:bg-indigo-900 text-white px-4 py-2 rounded-lg text-sm font-medium cursor-not-allowed opacity-60">Blitz</span>
+              ) : (
+                <Link href={`/collections/${collection.ID}/blitz`} className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors">Blitz</Link>
+              )
+            )}
+            {hasMix && (
+              <Link href={`/collections/${collection.ID}/test`} className="bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors">Test</Link>
             )}
             {hasFlashcards && (
-              <Link href={`/collections/${collection.ID}/cards-test`} className="bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors">Cards Test</Link>
-            )}
-            {hasTest && (
-              <Link href={`/collections/${collection.ID}/test`} className="bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors">Tests</Link>
-            )}
-            {hasQuiz && (
-              <Link href={`/collections/${collection.ID}/quiz`} className="bg-white dark:bg-slate-800 border border-indigo-300 dark:border-indigo-700 text-indigo-600 dark:text-indigo-400 px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-colors">Mix</Link>
+              <Link href={`/collections/${collection.ID}/flashcards`} className="bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors">Cards</Link>
             )}
           </div>
         )}
@@ -755,7 +756,6 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
                   ) : (
                     <div className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl px-5 py-3 flex justify-between items-center gap-4">
                       <div className="flex-1 min-w-0 flex items-center gap-3">
-                        {!editMode && <MasteryDot stats={card.Stats ?? null} />}
                         {card.Image && (
                           <img src={card.Image} alt="" className="w-10 h-10 rounded object-cover shrink-0" />
                         )}
@@ -765,11 +765,13 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
                           <span className="text-gray-600 dark:text-slate-400 text-sm">{card.Definition}</span>
                         </div>
                       </div>
-                      {editMode && (
+                      {editMode ? (
                         <div className="flex gap-3 text-sm shrink-0">
                           <button onClick={() => { closeAllForms(); setEditingCard(card); }} className="text-indigo-500 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300">Edit</button>
                           <button onClick={() => deleteCard(card.ID)} className="text-red-400 hover:text-red-600 dark:hover:text-red-300">Delete</button>
                         </div>
+                      ) : (
+                        <LevelDot level={itemProgress[`card:${card.ID}`]?.level} nextReviewAt={itemProgress[`card:${card.ID}`]?.next_review_at} />
                       )}
                     </div>
                   )}
@@ -816,7 +818,6 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
                     <div className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl px-5 py-3 flex justify-between items-start gap-4">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
-                          {!editMode && <MasteryDot stats={tq.Stats ?? null} />}
                           {tq.Image && (
                             <img src={tq.Image} alt="" className="w-10 h-10 rounded object-cover shrink-0" />
                           )}
@@ -830,11 +831,13 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
                           ))}
                         </div>
                       </div>
-                      {editMode && (
+                      {editMode ? (
                         <div className="flex gap-3 text-sm shrink-0">
                           <button onClick={() => { closeAllForms(); setEditingTest(tq); }} className="text-indigo-500 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300">Edit</button>
                           <button onClick={() => deleteTest(tq.ID)} className="text-red-400 hover:text-red-600 dark:hover:text-red-300">Delete</button>
                         </div>
+                      ) : (
+                        <LevelDot level={itemProgress[`tq:${tq.ID}`]?.level} nextReviewAt={itemProgress[`tq:${tq.ID}`]?.next_review_at} />
                       )}
                     </div>
                   )}

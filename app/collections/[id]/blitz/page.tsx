@@ -4,10 +4,10 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { isLoggedIn } from "@/lib/auth";
-import { fromCards, type SessionItem } from "@/lib/session";
+import { fromBlitz, type SessionItem } from "@/lib/session";
 import StudySession from "@/components/StudySession";
 
-export default function CardsTestPage(props: PageProps<"/collections/[id]/cards-test">) {
+export default function BlitzPage(props: PageProps<"/collections/[id]/blitz">) {
   const router = useRouter();
   const [items, setItems] = useState<SessionItem[]>([]);
   const [collectionID, setCollectionID] = useState("");
@@ -17,9 +17,9 @@ export default function CardsTestPage(props: PageProps<"/collections/[id]/cards-
     if (!isLoggedIn()) { router.replace("/"); return; }
     props.params.then(({ id }) => {
       setCollectionID(id);
-      return api.collections.get(id);
-    }).then((s) => setItems(fromCards(s.Cards ?? []))).catch(() => setError("Failed to load collection"));
+      return api.blitz.get(id);
+    }).then((result) => setItems(fromBlitz(result))).catch(() => setError("Failed to load blitz"));
   }, [router, props.params]);
 
-  return <StudySession items={items} collectionID={collectionID} doneTitle="Done!" error={error} />;
+  return <StudySession items={items} collectionID={collectionID} doneTitle="Blitz complete!" error={error} />;
 }
