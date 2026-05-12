@@ -4,7 +4,8 @@ import { useEffect, useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
 import OptionButton from "@/components/OptionButton";
-import { api, type StudyAnswer } from "@/lib/api";
+import LevelDot from "@/components/LevelDot";
+import { api, type StudyAnswer, type ProgressEntry } from "@/lib/api";
 import type { SessionItem } from "@/lib/session";
 
 type Props = {
@@ -26,16 +27,19 @@ function applyConfidence(level: number, delta: number): number {
   return level;
 }
 
-function levelStyle(level: number): string {
-  if (level === 1) return "bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400";
-  if (level <= 4) return "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400";
-  if (level <= 6) return "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400";
-  return "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300";
-}
-
-function levelLabel(level: number): string {
-  if (level === 7) return "★ Mastered";
-  return `Level ${level}`;
+function nextReviewFromLevel(level: number): string {
+  const now = Date.now();
+  const day = 86400000;
+  const dates: Record<number, number> = {
+    1: now + day,
+    2: now + 2 * day,
+    3: now + 7 * day,
+    4: now + 14 * day,
+    5: now + 30 * day,
+    6: now + 180 * day,
+  };
+  if (level === 7) return "2099-12-31T00:00:00Z";
+  return new Date(dates[level] ?? now + day).toISOString();
 }
 
 export default function StudySession({ items, collectionID, doneTitle, error }: Props) {
@@ -49,16 +53,16 @@ export default function StudySession({ items, collectionID, doneTitle, error }: 
   const [done, setDone] = useState(false);
   const [results, setResults] = useState<StudyAnswer[]>([]);
 
-  // Progress state
-  const [progress, setProgress] = useState<Record<string, number>>({});
+  // Progress state: keyed by "card:<id>" or "tq:<id>"
+  const [progress, setProgress] = useState<Record<string, ProgressEntry>>({});
   const [displayLevel, setDisplayLevel] = useState<number | null>(null);
   const [confidenceDelta, setConfidenceDelta] = useState<-1 | 0 | 1 | null>(null);
 
   useEffect(() => {
     api.progress.get(collectionID).then((data) => {
-      const merged: Record<string, number> = {};
-      for (const [id, lvl] of Object.entries(data.cards)) merged[`card:${id}`] = lvl;
-      for (const [id, lvl] of Object.entries(data.test_questions)) merged[`tq:${id}`] = lvl;
+      const merged: Record<string, ProgressEntry> = {};
+      for (const [id, entry] of Object.entries(data.cards)) merged[`card:${id}`] = entry;
+      for (const [id, entry] of Object.entries(data.test_questions)) merged[`tq:${id}`] = entry;
       setProgress(merged);
     }).catch(() => {});
   }, [collectionID]);
@@ -74,8 +78,8 @@ export default function StudySession({ items, collectionID, doneTitle, error }: 
   }, [done, collectionID]);
 
   const item = items[index];
-
-  const currentLevel = item ? (progress[`${item.sourceType}:${item.sourceID}`] ?? 1) : 1;
+  const currentEntry = item ? (progress[`${item.sourceType}:${item.sourceID}`] ?? null) : null;
+  const currentLevel = currentEntry?.level ?? 1;
 
   const submit = useCallback(() => {
     if (submitted || selected.size === 0 || !item) return;
@@ -98,8 +102,13 @@ export default function StudySession({ items, collectionID, doneTitle, error }: 
     if (!item) return;
     const delta = confidenceDelta ?? 0;
     const finalLevel = displayLevel != null ? applyConfidence(displayLevel, delta) : applyAnswer(currentLevel, isCorrect);
-    api.progress.update(collectionID, item.sourceType, item.sourceID, isCorrect, delta as -1 | 0 | 1).catch(() => {});
-    setProgress((prev) => ({ ...prev, [`${item.sourceType}:${item.sourceID}`]: finalLevel }));
+    api.progress.update(collectionID, item.sourceType, item.sourceID, isCorrect, delta as -1 | 0 | 1)
+      .then((res) => {
+        setProgress((prev) => ({ ...prev, [`${item.sourceType}:${item.sourceID}`]: { level: res.level, next_review_at: res.next_review_at } }));
+      })
+      .catch(() => {
+        setProgress((prev) => ({ ...prev, [`${item.sourceType}:${item.sourceID}`]: { level: finalLevel, next_review_at: nextReviewFromLevel(finalLevel) } }));
+      });
 
     if (index + 1 >= items.length) { setDone(true); return; }
     setIndex((i) => i + 1);
@@ -182,6 +191,8 @@ export default function StudySession({ items, collectionID, doneTitle, error }: 
     );
   }
 
+  const shownLevel = displayLevel ?? currentLevel;
+
   return (
     <div className="min-h-screen flex flex-col">
       <Navbar />
@@ -190,9 +201,7 @@ export default function StudySession({ items, collectionID, doneTitle, error }: 
           <div className="flex items-center justify-between">
             <p className="text-sm text-gray-400 dark:text-slate-500">{index + 1} / {items.length}</p>
             <div className="flex items-center gap-2">
-              <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${levelStyle(displayLevel ?? currentLevel)}`}>
-                {levelLabel(displayLevel ?? currentLevel)}
-              </span>
+              <LevelDot level={shownLevel} nextReviewAt={nextReviewFromLevel(shownLevel)} />
               <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${item.badge.className}`}>
                 {item.badge.text}
               </span>
@@ -230,7 +239,7 @@ export default function StudySession({ items, collectionID, doneTitle, error }: 
                   <button
                     onClick={() => handleConfidence(-1)}
                     disabled={confidenceDelta !== null}
-                    title="Too easy, lower level"
+                    title="Lower level"
                     className={`w-8 h-8 rounded-lg border text-sm font-bold transition-colors ${
                       confidenceDelta === -1
                         ? "border-red-400 bg-red-50 text-red-600 dark:border-red-600 dark:bg-red-900/30 dark:text-red-400"
@@ -244,7 +253,7 @@ export default function StudySession({ items, collectionID, doneTitle, error }: 
                   <button
                     onClick={() => handleConfidence(1)}
                     disabled={confidenceDelta !== null}
-                    title="Too easy, raise level"
+                    title="Raise level"
                     className={`w-8 h-8 rounded-lg border text-sm font-bold transition-colors ${
                       confidenceDelta === 1
                         ? "border-green-400 bg-green-50 text-green-600 dark:border-green-600 dark:bg-green-900/30 dark:text-green-400"

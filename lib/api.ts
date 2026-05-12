@@ -58,13 +58,6 @@ export type UserProfile = {
   Collections: Collection[];
 };
 
-export type CardStats = {
-  Correct: number;
-  Incorrect: number;
-  Streak: number;
-  LastSeen: string | null;
-};
-
 export type Card = {
   ID: string;
   CollectionID: string;
@@ -72,16 +65,8 @@ export type Card = {
   Definition: string;
   Image: string;
   Position: number;
-  Stats?: CardStats | null;
   CreatedAt: string;
   UpdatedAt: string;
-};
-
-export type TQStats = {
-  Correct: number;
-  Incorrect: number;
-  Streak: number;
-  LastSeen: string | null;
 };
 
 export type TestAnswer = {
@@ -98,7 +83,6 @@ export type TestQuestion = {
   Options: TestAnswer[];
   Image: string;
   Position: number;
-  Stats?: TQStats | null;
   CreatedAt: string;
   UpdatedAt: string;
 };
@@ -110,9 +94,14 @@ export type StudyAnswer = {
   selected_option_texts?: string[]; // test questions only (server-verified)
 };
 
+export type ProgressEntry = {
+  level: number;
+  next_review_at: string;
+};
+
 export type ProgressData = {
-  cards: Record<string, number>;          // cardID → level (1-7)
-  test_questions: Record<string, number>; // tqID → level (1-7)
+  cards: Record<string, ProgressEntry>;
+  test_questions: Record<string, ProgressEntry>;
 };
 
 export type DailyBucket = {

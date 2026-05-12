@@ -3,7 +3,8 @@
 import { useEffect, useState, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { api, Collection, Card, TestQuestion, TestAnswer, ProgressData } from "@/lib/api";
+import { api, Collection, Card, TestQuestion, TestAnswer, ProgressData, ProgressEntry } from "@/lib/api";
+import LevelDot from "@/components/LevelDot";
 import { isLoggedIn } from "@/lib/auth";
 import Navbar from "@/components/Navbar";
 import ImageUpload from "@/components/ImageUpload";
@@ -242,25 +243,6 @@ function trunc(s: string, n: number) {
   return s.length > n ? s.slice(0, n) + "…" : s;
 }
 
-function levelStyle(level: number): string {
-  if (level === 1) return "bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400";
-  if (level <= 4) return "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400";
-  if (level <= 6) return "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400";
-  return "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300";
-}
-
-function levelLabel(level: number): string {
-  return level === 7 ? "★ Mastered" : `Level ${level}`;
-}
-
-function LevelTag({ level }: { level: number | undefined }) {
-  if (level === undefined) return null;
-  return (
-    <span className={`text-xs font-medium px-2 py-0.5 rounded-full shrink-0 ${levelStyle(level)}`}>
-      {levelLabel(level)}
-    </span>
-  );
-}
 
 // ── Card form ────────────────────────────────────────────────────────────────
 
@@ -399,7 +381,7 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
   const [shareToken, setShareToken] = useState<string | null>(null);
   const [shareLoading, setShareLoading] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
-  const [itemProgress, setItemProgress] = useState<Record<string, number>>({});
+  const [itemProgress, setItemProgress] = useState<Record<string, ProgressEntry>>({});
 
   useEffect(() => {
     if (!isLoggedIn()) { router.replace("/"); return; }
@@ -412,9 +394,9 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
         setDraftCollectionID(col.DraftID);
       }
       api.progress.get(col.ID).then((data: ProgressData) => {
-        const merged: Record<string, number> = {};
-        for (const [id, lvl] of Object.entries(data.cards)) merged[`card:${id}`] = lvl;
-        for (const [id, lvl] of Object.entries(data.test_questions)) merged[`tq:${id}`] = lvl;
+        const merged: Record<string, ProgressEntry> = {};
+        for (const [id, entry] of Object.entries(data.cards)) merged[`card:${id}`] = entry;
+        for (const [id, entry] of Object.entries(data.test_questions)) merged[`tq:${id}`] = entry;
         setItemProgress(merged);
       }).catch(() => {});
     }).catch(() => setError("Failed to load collection"));
@@ -783,7 +765,7 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
                           <button onClick={() => deleteCard(card.ID)} className="text-red-400 hover:text-red-600 dark:hover:text-red-300">Delete</button>
                         </div>
                       ) : (
-                        <LevelTag level={itemProgress[`card:${card.ID}`]} />
+                        <LevelDot level={itemProgress[`card:${card.ID}`]?.level} nextReviewAt={itemProgress[`card:${card.ID}`]?.next_review_at} />
                       )}
                     </div>
                   )}
@@ -849,7 +831,7 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
                           <button onClick={() => deleteTest(tq.ID)} className="text-red-400 hover:text-red-600 dark:hover:text-red-300">Delete</button>
                         </div>
                       ) : (
-                        <LevelTag level={itemProgress[`tq:${tq.ID}`]} />
+                        <LevelDot level={itemProgress[`tq:${tq.ID}`]?.level} nextReviewAt={itemProgress[`tq:${tq.ID}`]?.next_review_at} />
                       )}
                     </div>
                   )}
