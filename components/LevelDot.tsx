@@ -29,7 +29,7 @@ export default function LevelDot({ level, nextReviewAt }: Props) {
   return (
     <div className="relative group shrink-0">
       {level === 7
-        ? <span className="block text-sky-400 cursor-default leading-none" style={{ fontSize: "11px" }}>★</span>
+        ? <span className="block text-sky-400 cursor-default leading-none text-base">★</span>
         : <span className={`block w-2.5 h-2.5 rounded-full cursor-default ${dotColor(level)}`} />
       }
       <div className="absolute right-0 bottom-full mb-2 z-10 pointer-events-none hidden group-hover:block">
