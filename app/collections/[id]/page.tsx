@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { api, Collection, Card, TestQuestion, TestAnswer } from "@/lib/api";
+import { api, Collection, Card, TestQuestion, TestAnswer, ProgressData } from "@/lib/api";
 import { isLoggedIn } from "@/lib/auth";
 import Navbar from "@/components/Navbar";
 import ImageUpload from "@/components/ImageUpload";
@@ -242,17 +242,23 @@ function trunc(s: string, n: number) {
   return s.length > n ? s.slice(0, n) + "…" : s;
 }
 
-function MasteryDot({ stats }: { stats: import("@/lib/api").CardStats | import("@/lib/api").TQStats | null }) {
-  if (!stats) return null;
-  const total = stats.Correct + stats.Incorrect;
-  if (total === 0) return null;
-  const rate = stats.Correct / total;
-  const cls = rate >= 0.8 ? "bg-green-400" : rate >= 0.5 ? "bg-yellow-400" : "bg-red-400";
+function levelStyle(level: number): string {
+  if (level === 1) return "bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400";
+  if (level <= 4) return "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400";
+  if (level <= 6) return "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400";
+  return "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300";
+}
+
+function levelLabel(level: number): string {
+  return level === 7 ? "★ Mastered" : `Level ${level}`;
+}
+
+function LevelTag({ level }: { level: number | undefined }) {
+  if (level === undefined) return null;
   return (
-    <span
-      className={`w-2 h-2 rounded-full shrink-0 ${cls}`}
-      title={`${stats.Correct} correct · ${stats.Incorrect} incorrect · streak ${stats.Streak}`}
-    />
+    <span className={`text-xs font-medium px-2 py-0.5 rounded-full shrink-0 ${levelStyle(level)}`}>
+      {levelLabel(level)}
+    </span>
   );
 }
 
@@ -393,6 +399,7 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
   const [shareToken, setShareToken] = useState<string | null>(null);
   const [shareLoading, setShareLoading] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
+  const [itemProgress, setItemProgress] = useState<Record<string, number>>({});
 
   useEffect(() => {
     if (!isLoggedIn()) { router.replace("/"); return; }
@@ -404,6 +411,12 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
         setHasDraft(true);
         setDraftCollectionID(col.DraftID);
       }
+      api.progress.get(col.ID).then((data: ProgressData) => {
+        const merged: Record<string, number> = {};
+        for (const [id, lvl] of Object.entries(data.cards)) merged[`card:${id}`] = lvl;
+        for (const [id, lvl] of Object.entries(data.test_questions)) merged[`tq:${id}`] = lvl;
+        setItemProgress(merged);
+      }).catch(() => {});
     }).catch(() => setError("Failed to load collection"));
   }, [router, props.params]);
 
@@ -755,7 +768,6 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
                   ) : (
                     <div className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl px-5 py-3 flex justify-between items-center gap-4">
                       <div className="flex-1 min-w-0 flex items-center gap-3">
-                        {!editMode && <MasteryDot stats={card.Stats ?? null} />}
                         {card.Image && (
                           <img src={card.Image} alt="" className="w-10 h-10 rounded object-cover shrink-0" />
                         )}
@@ -765,11 +777,13 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
                           <span className="text-gray-600 dark:text-slate-400 text-sm">{card.Definition}</span>
                         </div>
                       </div>
-                      {editMode && (
+                      {editMode ? (
                         <div className="flex gap-3 text-sm shrink-0">
                           <button onClick={() => { closeAllForms(); setEditingCard(card); }} className="text-indigo-500 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300">Edit</button>
                           <button onClick={() => deleteCard(card.ID)} className="text-red-400 hover:text-red-600 dark:hover:text-red-300">Delete</button>
                         </div>
+                      ) : (
+                        <LevelTag level={itemProgress[`card:${card.ID}`]} />
                       )}
                     </div>
                   )}
@@ -816,7 +830,6 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
                     <div className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl px-5 py-3 flex justify-between items-start gap-4">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
-                          {!editMode && <MasteryDot stats={tq.Stats ?? null} />}
                           {tq.Image && (
                             <img src={tq.Image} alt="" className="w-10 h-10 rounded object-cover shrink-0" />
                           )}
@@ -830,11 +843,13 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
                           ))}
                         </div>
                       </div>
-                      {editMode && (
+                      {editMode ? (
                         <div className="flex gap-3 text-sm shrink-0">
                           <button onClick={() => { closeAllForms(); setEditingTest(tq); }} className="text-indigo-500 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300">Edit</button>
                           <button onClick={() => deleteTest(tq.ID)} className="text-red-400 hover:text-red-600 dark:hover:text-red-300">Delete</button>
                         </div>
+                      ) : (
+                        <LevelTag level={itemProgress[`tq:${tq.ID}`]} />
                       )}
                     </div>
                   )}
