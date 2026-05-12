@@ -634,8 +634,13 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
   const cards = editMode ? editCards : (collection.Cards ?? []);
   const tests = editMode ? editTests : (collection.TestQuestions ?? []);
   const hasFlashcards = cards.length >= 2;
-  const hasTest = tests.length >= 1;
-  const hasQuiz = cards.length >= 1 && tests.length >= 1;
+  const hasMix = cards.length >= 1 && tests.length >= 1;
+  const hasBlitz = cards.length + tests.length >= 1;
+  const allItemKeys = [
+    ...cards.map((c) => `card:${c.ID}`),
+    ...tests.map((t) => `tq:${t.ID}`),
+  ];
+  const allMastered = allItemKeys.length > 0 && allItemKeys.every((k) => itemProgress[k]?.level === 7);
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -698,19 +703,20 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
         )}
 
         {/* Study mode buttons */}
-        {!editMode && (hasFlashcards || hasTest || hasQuiz) && (
+        {!editMode && (hasFlashcards || hasMix || hasBlitz) && (
           <div className="flex gap-3 mb-8 flex-wrap">
-            {hasFlashcards && (
-              <Link href={`/collections/${collection.ID}/flashcards`} className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors">Cards</Link>
+            {hasBlitz && (
+              allMastered ? (
+                <span className="bg-indigo-300 dark:bg-indigo-900 text-white px-4 py-2 rounded-lg text-sm font-medium cursor-not-allowed opacity-60">Blitz</span>
+              ) : (
+                <Link href={`/collections/${collection.ID}/blitz`} className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors">Blitz</Link>
+              )
+            )}
+            {hasMix && (
+              <Link href={`/collections/${collection.ID}/test`} className="bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors">Test</Link>
             )}
             {hasFlashcards && (
-              <Link href={`/collections/${collection.ID}/cards-test`} className="bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors">Cards Test</Link>
-            )}
-            {hasTest && (
-              <Link href={`/collections/${collection.ID}/test`} className="bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors">Tests</Link>
-            )}
-            {hasQuiz && (
-              <Link href={`/collections/${collection.ID}/quiz`} className="bg-white dark:bg-slate-800 border border-indigo-300 dark:border-indigo-700 text-indigo-600 dark:text-indigo-400 px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-colors">Mix</Link>
+              <Link href={`/collections/${collection.ID}/flashcards`} className="bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors">Cards</Link>
             )}
           </div>
         )}

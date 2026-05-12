@@ -97,6 +97,16 @@ export type StudyAnswer = {
 export type ProgressEntry = {
   level: number;
   next_review_at: string;
+  last_review_at?: string | null;
+};
+
+export type BlitzItem =
+  | { type: "card"; card: Card }
+  | { type: "tq"; tq: TestQuestion };
+
+export type BlitzResponse = {
+  items: BlitzItem[];
+  card_pool: { ID: string; Term: string }[];
 };
 
 export type ProgressData = {
@@ -235,5 +245,9 @@ export const api = {
       form.append("file", new Blob([text], { type: "text/csv" }), "import.csv");
       return request<{ imported: number }>(`/collections/${collectionID}/tests/import`, { method: "POST", body: form });
     },
+  },
+  blitz: {
+    get: (collectionID: string) =>
+      request<BlitzResponse>(`/collections/${collectionID}/blitz`),
   },
 };

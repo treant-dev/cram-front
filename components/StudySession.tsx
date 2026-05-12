@@ -18,6 +18,7 @@ type Props = {
 function applyAnswer(level: number, correct: boolean, nextReviewAt?: string): number {
   if (level === 7) return 7;
   if (correct) {
+    if (level === 1) return 2;
     if (nextReviewAt && new Date(nextReviewAt) > new Date()) return level;
     return Math.min(level + 1, 6);
   }
