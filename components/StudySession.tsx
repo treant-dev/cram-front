@@ -6,6 +6,7 @@ import Navbar from "@/components/Navbar";
 import OptionButton from "@/components/OptionButton";
 import LevelDot from "@/components/LevelDot";
 import { api, type StudyAnswer, type ProgressEntry } from "@/lib/api";
+import { isLoggedIn } from "@/lib/auth";
 import type { SessionItem } from "@/lib/session";
 
 type Props = {
@@ -48,6 +49,7 @@ function nextReviewFromLevel(level: number): string {
 
 export default function StudySession({ items, collectionID, doneTitle, error }: Props) {
   const router = useRouter();
+  const loggedIn = isLoggedIn();
   const sessionID = useMemo(() => crypto.randomUUID(), []);
   const [index, setIndex] = useState(0);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -63,6 +65,7 @@ export default function StudySession({ items, collectionID, doneTitle, error }: 
   const [confidenceDelta, setConfidenceDelta] = useState<-1 | 0 | 1 | null>(null);
 
   useEffect(() => {
+    if (!isLoggedIn() || !collectionID) return;
     api.progress.get(collectionID).then((data) => {
       const merged: Record<string, ProgressEntry> = {};
       for (const [id, entry] of Object.entries(data.cards)) merged[`card:${id}`] = entry;
@@ -73,7 +76,7 @@ export default function StudySession({ items, collectionID, doneTitle, error }: 
 
   useEffect(() => {
     if (!done || !collectionID) return;
-    if (results.length > 0) {
+    if (isLoggedIn() && results.length > 0) {
       api.study.submit(collectionID, sessionID, results).catch(() => {});
     }
     const t = setTimeout(() => router.replace(`/collections/${collectionID}`), 1700);
@@ -106,13 +109,15 @@ export default function StudySession({ items, collectionID, doneTitle, error }: 
     if (!item) return;
     const delta = confidenceDelta ?? 0;
     const finalLevel = displayLevel != null ? applyConfidence(displayLevel, delta) : applyAnswer(currentLevel, isCorrect, currentEntry?.next_review_at);
-    api.progress.update(collectionID, item.sourceType, item.sourceID, isCorrect, delta as -1 | 0 | 1)
-      .then((res) => {
-        setProgress((prev) => ({ ...prev, [`${item.sourceType}:${item.sourceID}`]: { level: res.level, next_review_at: res.next_review_at } }));
-      })
-      .catch(() => {
-        setProgress((prev) => ({ ...prev, [`${item.sourceType}:${item.sourceID}`]: { level: finalLevel, next_review_at: nextReviewFromLevel(finalLevel) } }));
-      });
+    if (isLoggedIn()) {
+      api.progress.update(collectionID, item.sourceType, item.sourceID, isCorrect, delta as -1 | 0 | 1)
+        .then((res) => {
+          setProgress((prev) => ({ ...prev, [`${item.sourceType}:${item.sourceID}`]: { level: res.level, next_review_at: res.next_review_at } }));
+        })
+        .catch(() => {
+          setProgress((prev) => ({ ...prev, [`${item.sourceType}:${item.sourceID}`]: { level: finalLevel, next_review_at: nextReviewFromLevel(finalLevel) } }));
+        });
+    }
 
     if (index + 1 >= items.length) { setDone(true); return; }
     setIndex((i) => i + 1);
@@ -205,7 +210,7 @@ export default function StudySession({ items, collectionID, doneTitle, error }: 
           <div className="flex items-center justify-between">
             <p className="text-sm text-gray-400 dark:text-slate-500">{index + 1} / {items.length}</p>
             <div className="flex items-center gap-2">
-              <LevelDot level={shownLevel} nextReviewAt={nextReviewFromLevel(shownLevel)} />
+              {loggedIn && <LevelDot level={shownLevel} nextReviewAt={nextReviewFromLevel(shownLevel)} />}
               <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${item.badge.className}`}>
                 {item.badge.text}
               </span>
@@ -238,7 +243,7 @@ export default function StudySession({ items, collectionID, doneTitle, error }: 
           <div className="flex items-center justify-between">
             <p className="text-xs text-gray-400 dark:text-slate-500 hidden sm:block">Press 1–{item.options.length} to select · Enter to confirm</p>
             <div className="flex items-center gap-2 ml-auto">
-              {submitted && (
+              {submitted && loggedIn && (
                 <div className="flex items-center gap-1">
                   <button
                     onClick={() => handleConfidence(-1)}

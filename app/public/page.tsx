@@ -94,16 +94,22 @@ export default function CollectionsMarketPage() {
                     {c.FollowerCount} {c.FollowerCount === 1 ? "follower" : "followers"}
                   </span>
                   {loggedIn && (
-                    <button
-                      onClick={() => toggleFollow(c)}
-                      className={`text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors ${
-                        c.IsFollowed
-                          ? "bg-indigo-50 dark:bg-indigo-900/30 border-indigo-300 dark:border-indigo-700 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/50"
-                          : "bg-white dark:bg-slate-800 border-gray-300 dark:border-slate-600 text-gray-600 dark:text-slate-300 hover:border-indigo-400 dark:hover:border-indigo-500"
-                      }`}
-                    >
-                      {c.IsFollowed ? "Following" : "Follow"}
-                    </button>
+                    currentUser?.id === c.UserID ? (
+                      <span className="text-xs font-medium px-3 py-1.5 rounded-lg border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 text-gray-400 dark:text-slate-500 cursor-default">
+                        Yours
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => toggleFollow(c)}
+                        className={`text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors ${
+                          c.IsFollowed
+                            ? "bg-indigo-50 dark:bg-indigo-900/30 border-indigo-300 dark:border-indigo-700 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/50"
+                            : "bg-white dark:bg-slate-800 border-gray-300 dark:border-slate-600 text-gray-600 dark:text-slate-300 hover:border-indigo-400 dark:hover:border-indigo-500"
+                        }`}
+                      >
+                        {c.IsFollowed ? "Following" : "Follow"}
+                      </button>
+                    )
                   )}
                   {isAdmin && (
                     <button
