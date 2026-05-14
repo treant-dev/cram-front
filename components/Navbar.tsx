@@ -59,7 +59,7 @@ export default function Navbar() {
 
         {/* Center: logo */}
         <div className="flex justify-center">
-          <Link href={loggedIn ? "/collections" : "/"} className="text-xl font-bold text-indigo-600 dark:text-indigo-400">
+          <Link href={loggedIn ? "/collections" : "/public"} className="text-xl font-bold text-indigo-600 dark:text-indigo-400">
             Cram
           </Link>
         </div>
@@ -87,7 +87,7 @@ export default function Navbar() {
           </div>
         ) : (
           <div className="flex justify-end">
-            <Link href="/" className="text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 transition-colors">
+            <Link href="/login" className="text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 transition-colors">
               Sign in
             </Link>
           </div>
@@ -110,7 +110,7 @@ export default function Navbar() {
                 Sign out
               </button>
             ) : (
-              <Link href="/" onClick={() => setMenuOpen(false)} className="text-sm font-medium text-indigo-600 dark:text-indigo-400">
+              <Link href="/login" onClick={() => setMenuOpen(false)} className="text-sm font-medium text-indigo-600 dark:text-indigo-400">
                 Sign in
               </Link>
             )}
