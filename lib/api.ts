@@ -250,4 +250,8 @@ export const api = {
     get: (collectionID: string) =>
       request<BlitzResponse>(`/collections/${collectionID}/blitz`),
   },
+  ai: {
+    suggestDefinition: (term: string) =>
+      request<{ definition: string }>("/ai/suggest", { method: "POST", body: JSON.stringify({ term }) }),
+  },
 };
