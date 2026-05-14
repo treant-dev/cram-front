@@ -246,14 +246,30 @@ function trunc(s: string, n: number) {
 
 // ── Card form ────────────────────────────────────────────────────────────────
 
-function CardForm({ initial, onSave, onCancel }: {
+function CardForm({ initial, onSave, onCancel, userRole }: {
   initial?: Card;
   onSave: (term: string, definition: string, image: string) => void;
   onCancel: () => void;
+  userRole?: string | null;
 }) {
   const [term, setTerm] = useState(initial?.Term ?? "");
   const [definition, setDefinition] = useState(initial?.Definition ?? "");
   const [image, setImage] = useState(initial?.Image ?? "");
+  const [suggesting, setSuggesting] = useState(false);
+  const canSuggest = userRole === "admin" || userRole === "pro";
+
+  async function suggestDefinition() {
+    if (!term.trim() || suggesting) return;
+    setSuggesting(true);
+    try {
+      const { definition: suggested } = await api.ai.suggestDefinition(term.trim());
+      setDefinition(suggested);
+    } catch {
+      // silently ignore — user can try again
+    } finally {
+      setSuggesting(false);
+    }
+  }
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -264,7 +280,15 @@ function CardForm({ initial, onSave, onCancel }: {
   return (
     <form onSubmit={submit} className={formCls}>
       <input className={inputCls} placeholder="Term" value={term} onChange={(e) => setTerm(e.target.value)} required autoFocus={!initial} maxLength={2000} />
-      <input className={inputCls} placeholder="Definition" value={definition} onChange={(e) => setDefinition(e.target.value)} required maxLength={2000} />
+      <div className="flex gap-2 items-center">
+        <input className={inputCls + " flex-1"} placeholder="Definition" value={definition} onChange={(e) => setDefinition(e.target.value)} required maxLength={2000} />
+        {canSuggest && (
+          <button type="button" onClick={suggestDefinition} disabled={suggesting || !term.trim()}
+            className="shrink-0 text-sm px-3 py-2 rounded-lg border border-indigo-300 dark:border-indigo-700 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 disabled:opacity-40 transition-colors">
+            {suggesting ? "…" : "Suggest"}
+          </button>
+        )}
+      </div>
       <ImageUpload value={image} onChange={setImage} />
       <div className="flex gap-2 justify-end">
         <button type="button" onClick={onCancel} className="text-sm text-gray-500 dark:text-slate-400 px-3 py-1 hover:text-gray-700 dark:hover:text-slate-200">Cancel</button>
@@ -357,6 +381,7 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
   // Active (published) collection — always shown in view mode.
   const [collection, setCollection] = useState<Collection | null>(null);
   const [currentUserID, setCurrentUserID] = useState<string | null>(null);
+  const [currentUserRole, setCurrentUserRole] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Edit mode — works against a server-side draft.
@@ -385,7 +410,7 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
 
   useEffect(() => {
     if (!isLoggedIn()) { router.replace("/"); return; }
-    api.auth.me().then((u) => setCurrentUserID(u.id)).catch(() => {});
+    api.auth.me().then((u) => { setCurrentUserID(u.id); setCurrentUserRole(u.role); }).catch(() => {});
     props.params.then(({ id }) => api.collections.get(id)).then((col) => {
       setCollection(col);
       setShareToken(col.ShareToken ?? null);
@@ -407,6 +432,7 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
       autoEditFired.current = true;
       enterEditMode();
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoEdit, collection]);
 
   // ── Edit mode lifecycle ──────────────────────────────────────────────────────
@@ -641,6 +667,12 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
     ...tests.map((t) => `tq:${t.ID}`),
   ];
   const allMastered = allItemKeys.length > 0 && allItemKeys.every((k) => itemProgress[k]?.level === 7);
+  const now = new Date();
+  const dueCount = allItemKeys.filter((k) => {
+    const p = itemProgress[k];
+    if (!p || p.level === 7) return false;
+    return !p.next_review_at || new Date(p.next_review_at) <= now;
+  }).length;
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -709,7 +741,9 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
               allMastered ? (
                 <span className="bg-indigo-300 dark:bg-indigo-900 text-white px-4 py-2 rounded-lg text-sm font-medium cursor-not-allowed opacity-60">Blitz</span>
               ) : (
-                <Link href={`/collections/${collection.ID}/blitz`} className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors">Blitz</Link>
+                <Link href={`/collections/${collection.ID}/blitz`} className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors">
+                  Blitz{dueCount > 0 && ` (${dueCount})`}
+                </Link>
               )
             )}
             {hasMix && (
@@ -746,13 +780,13 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
                 }}
               />
             )}
-            {editMode && showCardForm && <CardForm onSave={addCard} onCancel={() => setShowCardForm(false)} />}
+            {editMode && showCardForm && <CardForm onSave={addCard} onCancel={() => setShowCardForm(false)} userRole={currentUserRole} />}
 
             <ul className="flex flex-col gap-2">
               {cards.map((card) => (
                 <li key={card.ID}>
                   {editMode && editingCard?.ID === card.ID ? (
-                    <CardForm initial={card} onSave={updateCard} onCancel={() => setEditingCard(null)} />
+                    <CardForm initial={card} onSave={updateCard} onCancel={() => setEditingCard(null)} userRole={currentUserRole} />
                   ) : (
                     <div className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl px-5 py-3 flex justify-between items-center gap-4">
                       <div className="flex-1 min-w-0 flex items-center gap-3">
