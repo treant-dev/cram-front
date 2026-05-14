@@ -407,6 +407,8 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
   const [shareLoading, setShareLoading] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
   const [itemProgress, setItemProgress] = useState<Record<string, ProgressEntry>>({});
+  const [isFollowed, setIsFollowed] = useState(false);
+  const [followLoading, setFollowLoading] = useState(false);
 
   useEffect(() => {
     if (!isLoggedIn()) { router.replace("/"); return; }
@@ -434,6 +436,13 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoEdit, collection]);
+
+  useEffect(() => {
+    if (!collection || !currentUserID || currentUserID === collection.UserID) return;
+    api.home.get().then((data) => {
+      setIsFollowed((data.Following ?? []).some((f) => f.ID === collection.ID));
+    }).catch(() => {});
+  }, [collection, currentUserID]);
 
   // ── Edit mode lifecycle ──────────────────────────────────────────────────────
 
@@ -595,6 +604,26 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
     router.replace("/collections");
   }
 
+  // ── Follow ───────────────────────────────────────────────────────────────────
+
+  async function toggleFollow() {
+    if (!collection) return;
+    setFollowLoading(true);
+    const prev = isFollowed;
+    setIsFollowed(!prev);
+    try {
+      if (prev) {
+        await api.follows.unfollow(collection.ID);
+      } else {
+        await api.follows.follow(collection.ID);
+      }
+    } catch {
+      setIsFollowed(prev);
+    } finally {
+      setFollowLoading(false);
+    }
+  }
+
   // ── Share link ───────────────────────────────────────────────────────────────
 
   async function generateShareLink() {
@@ -735,7 +764,7 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
         )}
 
         {/* Study mode buttons */}
-        {!editMode && (hasFlashcards || hasMix || hasBlitz) && (
+        {!editMode && (hasFlashcards || hasMix || hasBlitz || !isOwner) && (
           <div className="flex gap-3 mb-8 flex-wrap">
             {hasBlitz && (
               allMastered ? (
@@ -751,6 +780,19 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
             )}
             {hasFlashcards && (
               <Link href={`/collections/${collection.ID}/flashcards`} className="bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors">Cards</Link>
+            )}
+            {!isOwner && (
+              <button
+                onClick={toggleFollow}
+                disabled={followLoading}
+                className={`text-sm px-4 py-2 rounded-lg border font-medium transition-colors disabled:opacity-60 ${
+                  isFollowed
+                    ? "bg-indigo-50 dark:bg-indigo-900/30 border-indigo-300 dark:border-indigo-700 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/50"
+                    : "bg-white dark:bg-slate-800 border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 hover:border-indigo-400 dark:hover:border-indigo-500"
+                }`}
+              >
+                {followLoading ? "…" : isFollowed ? "Following" : "Follow"}
+              </button>
             )}
           </div>
         )}
