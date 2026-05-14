@@ -86,7 +86,11 @@ export default function Navbar() {
             </div>
           </div>
         ) : (
-          <div />
+          <div className="flex justify-end">
+            <Link href="/" className="text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 transition-colors">
+              Sign in
+            </Link>
+          </div>
         )}
       </nav>
 
@@ -97,14 +101,18 @@ export default function Navbar() {
           {navLink("/public", "Collections Market")}
           {isAdmin && navLink("/users", "Users")}
           <div className="border-t border-gray-100 dark:border-slate-800 pt-3 flex flex-col gap-3">
-            {navLink("/settings", "Settings")}
-            {loggedIn && (
+            {loggedIn && navLink("/settings", "Settings")}
+            {loggedIn ? (
               <button
                 onClick={() => { setMenuOpen(false); logout(); }}
                 className="text-sm text-gray-500 dark:text-slate-400 hover:text-gray-800 dark:hover:text-slate-200 transition-colors text-left"
               >
                 Sign out
               </button>
+            ) : (
+              <Link href="/" onClick={() => setMenuOpen(false)} className="text-sm font-medium text-indigo-600 dark:text-indigo-400">
+                Sign in
+              </Link>
             )}
           </div>
         </div>

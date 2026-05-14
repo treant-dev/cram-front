@@ -154,6 +154,7 @@ export const api = {
     list: () => request<Collection[]>("/collections"),
     listPublic: () => request<PublicCollection[]>("/public/collections"),
     get: (id: string) => request<Collection>(`/collections/${id}`),
+    getPublic: (id: string) => request<Collection>(`/public/collections/${id}`),
     create: (title: string, description: string, isPublic = false) =>
       request<Collection>("/collections", { method: "POST", body: JSON.stringify({ title, description, is_public: isPublic }) }),
     update: (id: string, title: string, description: string, isPublic: boolean) =>

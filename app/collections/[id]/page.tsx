@@ -411,21 +411,27 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
   const [followLoading, setFollowLoading] = useState(false);
 
   useEffect(() => {
-    if (!isLoggedIn()) { router.replace("/"); return; }
-    api.auth.me().then((u) => { setCurrentUserID(u.id); setCurrentUserRole(u.role); }).catch(() => {});
-    props.params.then(({ id }) => api.collections.get(id)).then((col) => {
+    const loggedIn = isLoggedIn();
+    if (loggedIn) {
+      api.auth.me().then((u) => { setCurrentUserID(u.id); setCurrentUserRole(u.role); }).catch(() => {});
+    }
+    props.params.then(({ id }) =>
+      loggedIn ? api.collections.get(id) : api.collections.getPublic(id)
+    ).then((col) => {
       setCollection(col);
       setShareToken(col.ShareToken ?? null);
       if (col.DraftID) {
         setHasDraft(true);
         setDraftCollectionID(col.DraftID);
       }
-      api.progress.get(col.ID).then((data: ProgressData) => {
-        const merged: Record<string, ProgressEntry> = {};
-        for (const [id, entry] of Object.entries(data.cards)) merged[`card:${id}`] = entry;
-        for (const [id, entry] of Object.entries(data.test_questions)) merged[`tq:${id}`] = entry;
-        setItemProgress(merged);
-      }).catch(() => {});
+      if (loggedIn) {
+        api.progress.get(col.ID).then((data: ProgressData) => {
+          const merged: Record<string, ProgressEntry> = {};
+          for (const [id, entry] of Object.entries(data.cards)) merged[`card:${id}`] = entry;
+          for (const [id, entry] of Object.entries(data.test_questions)) merged[`tq:${id}`] = entry;
+          setItemProgress(merged);
+        }).catch(() => {});
+      }
     }).catch(() => setError("Failed to load collection"));
   }, [router, props.params]);
 
@@ -766,7 +772,7 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
         {/* Study mode buttons */}
         {!editMode && (hasFlashcards || hasMix || hasBlitz || !isOwner) && (
           <div className="flex gap-3 mb-8 flex-wrap">
-            {hasBlitz && (
+            {hasBlitz && currentUserID !== null && (
               allMastered ? (
                 <span className="bg-indigo-300 dark:bg-indigo-900 text-white px-4 py-2 rounded-lg text-sm font-medium cursor-not-allowed opacity-60">Blitz</span>
               ) : (

@@ -16,10 +16,9 @@ export default function FlashcardsPage(props: PageProps<"/collections/[id]/flash
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!isLoggedIn()) { router.replace("/"); return; }
     props.params.then(({ id }) => {
       setCollectionID(id);
-      return api.collections.get(id);
+      return isLoggedIn() ? api.collections.get(id) : api.collections.getPublic(id);
     }).then((s) => {
       const arr = [...(s.Cards ?? [])];
       for (let i = arr.length - 1; i > 0; i--) {
