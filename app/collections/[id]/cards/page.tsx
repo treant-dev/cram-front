@@ -5,8 +5,9 @@ import { useRouter } from "next/navigation";
 import { api, Card } from "@/lib/api";
 import { isLoggedIn } from "@/lib/auth";
 import Navbar from "@/components/Navbar";
+import SpeakButton from "@/components/SpeakButton";
 
-export default function FlashcardsPage(props: PageProps<"/collections/[id]/flashcards">) {
+export default function CardsPage(props: PageProps<"/collections/[id]/cards">) {
   const router = useRouter();
   const [cards, setCards] = useState<Card[]>([]);
   const [index, setIndex] = useState(0);
@@ -102,8 +103,9 @@ export default function FlashcardsPage(props: PageProps<"/collections/[id]/flash
 
         <div
           onClick={flip}
-          className="cursor-pointer w-full max-w-lg min-h-48 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-2xl shadow-sm flex flex-col items-center justify-center p-8 text-center select-none hover:shadow-md dark:hover:border-slate-600 transition-all gap-4"
+          className="relative cursor-pointer w-full max-w-lg min-h-48 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-2xl shadow-sm flex flex-col items-center justify-center p-8 text-center select-none hover:shadow-md dark:hover:border-slate-600 transition-all gap-4"
         >
+          <SpeakButton text={card.Term} className="absolute top-3 right-3" />
           {card.Image && !flipped && (
             <img src={card.Image} alt="" className="max-h-36 max-w-full rounded-lg object-contain" />
           )}

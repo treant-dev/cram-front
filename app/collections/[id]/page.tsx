@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { api, Collection, Card, TestQuestion, TestAnswer, ProgressData, ProgressEntry } from "@/lib/api";
 import LevelDot from "@/components/LevelDot";
+import SpeakButton from "@/components/SpeakButton";
 import { isLoggedIn } from "@/lib/auth";
 import Navbar from "@/components/Navbar";
 import ImageUpload from "@/components/ImageUpload";
@@ -400,6 +401,7 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
   const [editingTest, setEditingTest] = useState<TestQuestion | null>(null);
   const [showCardForm, setShowCardForm] = useState(false);
   const [showTestForm, setShowTestForm] = useState(false);
+  const [showQuickAdd, setShowQuickAdd] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [showImportTest, setShowImportTest] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -597,6 +599,21 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
 
   // ── Immediate actions (view mode, owner only) ────────────────────────────────
 
+  // Quick-add: write a single item straight to the published collection (no draft).
+  async function quickAddCard(term: string, definition: string, image: string) {
+    if (!collection) return;
+    await api.cards.add(collection.ID, term, definition, image, (collection.Cards ?? []).length);
+    setShowQuickAdd(false);
+    setCollection(await api.collections.get(collection.ID));
+  }
+
+  async function quickAddTest(question: string, options: TestAnswer[], image: string) {
+    if (!collection) return;
+    await api.tests.add(collection.ID, question, options, image, (collection.TestQuestions ?? []).length);
+    setShowQuickAdd(false);
+    setCollection(await api.collections.get(collection.ID));
+  }
+
   async function togglePublic() {
     if (!collection) return;
     await api.collections.update(collection.ID, collection.Title, collection.Description, !collection.IsPublic);
@@ -694,18 +711,20 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
   // In view mode show active collection content; in edit mode show draft content.
   const cards = editMode ? editCards : (collection.Cards ?? []);
   const tests = editMode ? editTests : (collection.TestQuestions ?? []);
-  const hasFlashcards = cards.length >= 2;
-  const hasMix = cards.length >= 1 && tests.length >= 1;
-  const hasBlitz = cards.length + tests.length >= 1;
-  const allItemKeys = [
-    ...cards.map((c) => `card:${c.ID}`),
-    ...tests.map((t) => `tq:${t.ID}`),
-  ];
+  const isCards = collection.Type !== "tests";
+  const isTests = collection.Type === "tests";
+  const hasFlip = isCards && cards.length >= 2;          // flip-card mode needs ≥2 cards
+  const hasTest = isTests && tests.length >= 1;          // multiple-choice test (tests collections only)
+  const hasBlitz = (isCards ? cards.length : tests.length) >= 1;
+  const allItemKeys = isCards
+    ? cards.map((c) => `card:${c.ID}`)
+    : tests.map((t) => `tq:${t.ID}`);
   const allMastered = allItemKeys.length > 0 && allItemKeys.every((k) => itemProgress[k]?.level === 7);
   const now = new Date();
   const dueCount = allItemKeys.filter((k) => {
     const p = itemProgress[k];
-    if (!p || p.level === 7) return false;
+    if (!p) return true; // never seen — due (matches backend GetBlitz)
+    if (p.level === 7) return false; // mastered — not due
     return !p.next_review_at || new Date(p.next_review_at) <= now;
   }).length;
 
@@ -722,16 +741,16 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
                 <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
                   Draft
                 </span>
-                <span className="text-xs text-gray-400 dark:text-slate-500 hidden sm:inline">Changes are saved as a draft until you publish</span>
+                <span className="text-xs text-gray-400 dark:text-slate-500 hidden sm:inline">Changes are kept as a draft until you save</span>
               </div>
               <div className="flex items-center gap-2">
-                <button onClick={publish} disabled={saving} className={`${btnBase} bg-indigo-600 border-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-60`}>
-                  {saving ? "Saving…" : "Publish"}
+                <button onClick={publish} disabled={saving} title="Publish changes (make them live)" className={`${btnBase} bg-indigo-600 border-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-60`}>
+                  {saving ? "Saving…" : "Save"}
                 </button>
-                <button onClick={saveDraftAndExit} disabled={saving} className={`${btnBase} border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700 disabled:opacity-60`}>
-                  Save draft
+                <button onClick={saveDraftAndExit} disabled={saving} title="Save draft and close editor" className={`${btnBase} border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700 disabled:opacity-60`}>
+                  Close
                 </button>
-                <button onClick={discard} disabled={saving} className={`${btnBase} border-red-200 dark:border-red-800 bg-white dark:bg-slate-800 text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-60`}>
+                <button onClick={discard} disabled={saving} title="Discard unsaved changes" className={`${btnBase} border-red-200 dark:border-red-800 bg-white dark:bg-slate-800 text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-60`}>
                   Discard
                 </button>
               </div>
@@ -769,9 +788,9 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
           </div>
         )}
 
-        {/* Study mode buttons */}
-        {!editMode && (hasFlashcards || hasMix || hasBlitz || !isOwner) && (
-          <div className="flex gap-3 mb-8 flex-wrap">
+        {/* Study mode buttons + quick-add */}
+        {!editMode && (hasBlitz || isOwner || currentUserID !== null) && (
+          <div className="flex gap-3 mb-8 flex-wrap items-center">
             {hasBlitz && currentUserID !== null && (
               allMastered ? (
                 <span className="bg-indigo-300 dark:bg-indigo-900 text-white px-4 py-2 rounded-lg text-sm font-medium cursor-not-allowed opacity-60">Blitz</span>
@@ -781,11 +800,11 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
                 </Link>
               )
             )}
-            {hasMix && (
+            {hasTest && (
               <Link href={`/collections/${collection.ID}/test`} className="bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors">Test</Link>
             )}
-            {hasFlashcards && (
-              <Link href={`/collections/${collection.ID}/flashcards`} className="bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors">Cards</Link>
+            {hasFlip && (
+              <Link href={`/collections/${collection.ID}/cards`} className="bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors">Cards</Link>
             )}
             {currentUserID !== null && !isOwner && (
               <button
@@ -800,11 +819,30 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
                 {followLoading ? "…" : isFollowed ? "Following" : "Follow"}
               </button>
             )}
+            {isOwner && (
+              <button
+                onClick={() => setShowQuickAdd((v) => !v)}
+                className="ml-auto px-4 py-2 rounded-lg text-sm font-medium border border-indigo-300 dark:border-indigo-700 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-colors"
+              >
+                + Add {isCards ? "card" : "question"}
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Quick-add form (view mode, owner) — add one item without entering edit mode */}
+        {!editMode && isOwner && showQuickAdd && (
+          <div className="mb-6">
+            {isCards ? (
+              <CardForm onSave={quickAddCard} onCancel={() => setShowQuickAdd(false)} userRole={currentUserRole} />
+            ) : (
+              <TestForm onSave={quickAddTest} onCancel={() => setShowQuickAdd(false)} />
+            )}
           </div>
         )}
 
         {/* ── Cards section ── */}
-        {(editMode || cards.length > 0) && (
+        {isCards && (editMode || cards.length > 0) && (
           <div className="mb-8">
             <div className="flex items-center justify-between mb-3">
               <h2 className="font-semibold text-gray-700 dark:text-slate-300">Cards ({cards.length})</h2>
@@ -841,6 +879,7 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
                         {card.Image && (
                           <img src={card.Image} alt="" className="w-10 h-10 rounded object-cover shrink-0" />
                         )}
+                        <SpeakButton text={card.Term} />
                         <div className="min-w-0">
                           <span className="font-bold text-gray-900 dark:text-slate-100">{card.Term}</span>
                           <span className="text-gray-400 dark:text-slate-600 mx-2">-</span>
@@ -865,7 +904,7 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
         )}
 
         {/* ── Test questions section ── */}
-        {(editMode || tests.length > 0) && (
+        {isTests && (editMode || tests.length > 0) && (
           <div className="mb-8">
             <div className="flex items-center justify-between mb-3">
               <h2 className="font-semibold text-gray-700 dark:text-slate-300">Test questions ({tests.length})</h2>

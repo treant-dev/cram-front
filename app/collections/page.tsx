@@ -18,9 +18,14 @@ function CollectionItem({ c }: { c: Collection }) {
           <p className="font-semibold text-gray-900 dark:text-slate-100">{c.Title}</p>
           {c.Description && <p className="text-sm text-gray-500 dark:text-slate-400 mt-0.5">{c.Description}</p>}
         </div>
-        <span className={`text-xs px-2 py-0.5 rounded-full shrink-0 ${c.IsPublic ? "bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400" : "bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400"}`}>
-          {c.IsPublic ? "Public" : "Private"}
-        </span>
+        <div className="flex items-center gap-1.5 shrink-0">
+          <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400">
+            {c.Type === "tests" ? "Tests" : "Cards"}
+          </span>
+          <span className={`text-xs px-2 py-0.5 rounded-full ${c.IsPublic ? "bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400" : "bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400"}`}>
+            {c.IsPublic ? "Public" : "Private"}
+          </span>
+        </div>
       </div>
     </Link>
   );
@@ -35,6 +40,7 @@ export default function HomePage() {
   const [showForm, setShowForm] = useState(false);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [type, setType] = useState<"cards" | "tests">("cards");
 
   useEffect(() => {
     if (!isLoggedIn()) { router.replace("/"); return; }
@@ -47,7 +53,7 @@ export default function HomePage() {
   async function createCollection(e: React.FormEvent) {
     e.preventDefault();
     if (!title.trim()) return;
-    const col = await api.collections.create(title.trim(), description.trim());
+    const col = await api.collections.create(title.trim(), description.trim(), type);
     router.push(`/collections/${col.ID}?edit=1`);
   }
 
@@ -76,6 +82,25 @@ export default function HomePage() {
 
           {showForm && (
             <form onSubmit={createCollection} className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl p-5 mb-4 flex flex-col gap-3">
+              <div className="flex gap-2">
+                {([
+                  { v: "cards", label: "Flashcards" },
+                  { v: "tests", label: "Test questions" },
+                ] as const).map((opt) => (
+                  <button
+                    key={opt.v}
+                    type="button"
+                    onClick={() => setType(opt.v)}
+                    className={`flex-1 text-sm font-medium px-3 py-2 rounded-lg border transition-colors ${
+                      type === opt.v
+                        ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300"
+                        : "border-gray-300 dark:border-slate-600 text-gray-600 dark:text-slate-400 hover:border-indigo-400"
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
               <input
                 className="border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 placeholder:text-gray-400 dark:placeholder:text-slate-500"
                 placeholder="Title"

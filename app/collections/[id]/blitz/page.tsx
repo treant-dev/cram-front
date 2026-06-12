@@ -21,5 +21,5 @@ export default function BlitzPage(props: PageProps<"/collections/[id]/blitz">) {
     }).then((result) => setItems(fromBlitz(result))).catch(() => setError("Failed to load blitz"));
   }, [router, props.params]);
 
-  return <StudySession items={items} collectionID={collectionID} doneTitle="Blitz complete!" error={error} />;
+  return <StudySession items={items} collectionID={collectionID} doneTitle="Blitz complete!" error={error} requeueWrongCards />;
 }

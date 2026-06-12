@@ -11,7 +11,7 @@ const PAGE_SIZE = 20;
 
 const ROLE_BADGE: Record<string, string> = {
   admin:   "bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400",
-  premium: "bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-400",
+  pro:     "bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-400",
   user:    "bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400",
 };
 
@@ -131,7 +131,7 @@ export default function UsersPage() {
                       {u.ID !== currentUser?.id && (
                         <div className="px-5 py-3 flex items-center gap-2 border-b border-gray-100 dark:border-slate-800">
                           <span className="text-xs text-gray-500 dark:text-slate-400 mr-1">Set role:</span>
-                          {(["user", "premium", "admin"] as const).map((role) => (
+                          {(["user", "pro", "admin"] as const).map((role) => (
                             <button
                               key={role}
                               disabled={u.Role === role || changing === u.ID}
