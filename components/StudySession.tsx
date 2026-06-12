@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
 import OptionButton from "@/components/OptionButton";
+import SpeakButton from "@/components/SpeakButton";
 import LevelDot from "@/components/LevelDot";
 import { api, type StudyAnswer, type ProgressEntry } from "@/lib/api";
 import { isLoggedIn } from "@/lib/auth";
@@ -14,7 +15,19 @@ type Props = {
   collectionID: string;
   doneTitle: string;
   error?: string;
+  // When set, a card answered wrong on its first attempt is re-added once to the
+  // end of the queue with freshly generated options (blitz "repeat the mistake").
+  requeueWrongCards?: boolean;
 };
+
+function reshuffleOptions(options: SessionItem["options"]): SessionItem["options"] {
+  const a = [...options];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
 
 function applyAnswer(level: number, correct: boolean, nextReviewAt?: string): number {
   if (level === 7) return 7;
@@ -47,11 +60,17 @@ function nextReviewFromLevel(level: number): string {
   return new Date(dates[level] ?? now + day).toISOString();
 }
 
-export default function StudySession({ items, collectionID, doneTitle, error }: Props) {
+export default function StudySession({ items, collectionID, doneTitle, error, requeueWrongCards }: Props) {
   const router = useRouter();
   const loggedIn = isLoggedIn();
   const sessionID = useMemo(() => crypto.randomUUID(), []);
+  // Working queue: starts as `items` and may grow when wrong cards are requeued.
+  // `total` is the original count and is the denominator for the X/N score —
+  // requeued copies never inflate it.
+  const [queue, setQueue] = useState<SessionItem[]>(items);
+  const [total, setTotal] = useState(items.length);
   const [index, setIndex] = useState(0);
+  const [seededFrom, setSeededFrom] = useState(items);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [submitted, setSubmitted] = useState(false);
   const [isCorrect, setIsCorrect] = useState(false);
@@ -63,6 +82,16 @@ export default function StudySession({ items, collectionID, doneTitle, error }: 
   const [progress, setProgress] = useState<Record<string, ProgressEntry>>({});
   const [displayLevel, setDisplayLevel] = useState<number | null>(null);
   const [confidenceDelta, setConfidenceDelta] = useState<-1 | 0 | 1 | null>(null);
+
+  // Items load asynchronously in the parent; (re)seed the queue and original total
+  // when a new array arrives. Adjusting state during render is React's recommended
+  // pattern for resetting on prop change without an effect cascade.
+  if (items !== seededFrom) {
+    setSeededFrom(items);
+    setQueue(items);
+    setTotal(items.length);
+    setIndex(0);
+  }
 
   useEffect(() => {
     if (!isLoggedIn() || !collectionID) return;
@@ -84,7 +113,7 @@ export default function StudySession({ items, collectionID, doneTitle, error }: 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [done, collectionID]);
 
-  const item = items[index];
+  const item = queue[index];
   const currentEntry = item ? (progress[`${item.sourceType}:${item.sourceID}`] ?? null) : null;
   const currentLevel = currentEntry?.level ?? 1;
 
@@ -94,8 +123,16 @@ export default function StudySession({ items, collectionID, doneTitle, error }: 
     const correct = selected.size === correctSet.size && [...selected].every((s) => correctSet.has(s));
     setIsCorrect(correct);
     setSubmitted(true);
-    setDisplayLevel(applyAnswer(currentLevel, correct, currentEntry?.next_review_at));
+    // On a retry, a correct answer redeems +1 (the wrong first attempt already
+    // halved the level); a wrong retry leaves the level untouched.
+    setDisplayLevel(
+      item.isRetry
+        ? (correct ? Math.min(currentLevel + 1, 6) : currentLevel)
+        : applyAnswer(currentLevel, correct, currentEntry?.next_review_at)
+    );
     setConfidenceDelta(null);
+    // Score and session history count first attempts only; retries are practice.
+    if (item.isRetry) return;
     if (correct) setScore((sc) => sc + 1);
     setResults((prev) => [
       ...prev,
@@ -108,24 +145,44 @@ export default function StudySession({ items, collectionID, doneTitle, error }: 
   const next = useCallback(() => {
     if (!item) return;
     const delta = confidenceDelta ?? 0;
-    const finalLevel = displayLevel != null ? applyConfidence(displayLevel, delta) : applyAnswer(currentLevel, isCorrect, currentEntry?.next_review_at);
+    const key = `${item.sourceType}:${item.sourceID}`;
+
     if (isLoggedIn()) {
-      api.progress.update(collectionID, item.sourceType, item.sourceID, isCorrect, delta as -1 | 0 | 1)
-        .then((res) => {
-          setProgress((prev) => ({ ...prev, [`${item.sourceType}:${item.sourceID}`]: { level: res.level, next_review_at: res.next_review_at } }));
-        })
-        .catch(() => {
-          setProgress((prev) => ({ ...prev, [`${item.sourceType}:${item.sourceID}`]: { level: finalLevel, next_review_at: nextReviewFromLevel(finalLevel) } }));
-        });
+      if (!item.isRetry) {
+        const finalLevel = displayLevel != null ? applyConfidence(displayLevel, delta) : applyAnswer(currentLevel, isCorrect, currentEntry?.next_review_at);
+        api.progress.update(collectionID, item.sourceType, item.sourceID, isCorrect, delta as -1 | 0 | 1)
+          .then((res) => setProgress((prev) => ({ ...prev, [key]: { level: res.level, next_review_at: res.next_review_at } })))
+          .catch(() => setProgress((prev) => ({ ...prev, [key]: { level: finalLevel, next_review_at: nextReviewFromLevel(finalLevel) } })));
+      } else if (isCorrect) {
+        // Retry redemption: +1 server-side, bypassing the due-date gate. A wrong
+        // retry submits nothing — the first attempt's penalty already stands.
+        const finalLevel = Math.min(currentLevel + 1, 6);
+        api.progress.update(collectionID, item.sourceType, item.sourceID, true, 0, true)
+          .then((res) => setProgress((prev) => ({ ...prev, [key]: { level: res.level, next_review_at: res.next_review_at } })))
+          .catch(() => setProgress((prev) => ({ ...prev, [key]: { level: finalLevel, next_review_at: nextReviewFromLevel(finalLevel) } })));
+      }
     }
 
-    if (index + 1 >= items.length) { setDone(true); return; }
+    // Requeue any wrong item once, with a fresh set of options.
+    let nextQueue = queue;
+    if (requeueWrongCards && !item.isRetry && !isCorrect) {
+      const retryItem: SessionItem = {
+        ...item,
+        isRetry: true,
+        options: item.regenOptions ? item.regenOptions() : reshuffleOptions(item.options),
+        badge: { text: "Review", className: "bg-amber-100 text-amber-600" },
+      };
+      nextQueue = [...queue, retryItem];
+      setQueue(nextQueue);
+    }
+
+    if (index + 1 >= nextQueue.length) { setDone(true); return; }
     setIndex((i) => i + 1);
     setSelected(new Set());
     setSubmitted(false);
     setDisplayLevel(null);
     setConfidenceDelta(null);
-  }, [index, items.length, item, isCorrect, confidenceDelta, displayLevel, currentLevel, collectionID]);
+  }, [index, queue, item, isCorrect, confidenceDelta, displayLevel, currentLevel, collectionID, requeueWrongCards]);
 
   function handleConfidence(delta: -1 | 1) {
     if (confidenceDelta !== null || displayLevel === null) return;
@@ -170,7 +227,7 @@ export default function StudySession({ items, collectionID, doneTitle, error }: 
     );
   }
 
-  if (items.length === 0) {
+  if (queue.length === 0) {
     return (
       <div className="min-h-screen flex flex-col">
         <Navbar />
@@ -193,7 +250,7 @@ export default function StudySession({ items, collectionID, doneTitle, error }: 
         <Navbar />
         <div className="flex-1 flex flex-col items-center justify-center gap-4 text-center px-4">
           <h2 className="text-2xl font-bold">{doneTitle}</h2>
-          <p className="text-gray-500 dark:text-slate-400 text-lg">{score} / {items.length} correct</p>
+          <p className="text-gray-500 dark:text-slate-400 text-lg">{score} / {total} correct</p>
           <p className="text-gray-400 dark:text-slate-500 text-sm">Returning to collection…</p>
         </div>
       </div>
@@ -208,7 +265,7 @@ export default function StudySession({ items, collectionID, doneTitle, error }: 
       <main className="flex-1 flex flex-col items-center justify-center px-4">
         <div className="w-full max-w-lg flex flex-col gap-5">
           <div className="flex items-center justify-between">
-            <p className="text-sm text-gray-400 dark:text-slate-500">{index + 1} / {items.length}</p>
+            <p className="text-sm text-gray-400 dark:text-slate-500">{index + 1} / {queue.length}</p>
             <div className="flex items-center gap-2">
               {loggedIn && <LevelDot level={shownLevel} nextReviewAt={nextReviewFromLevel(shownLevel)} />}
               <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${item.badge.className}`}>
@@ -217,7 +274,10 @@ export default function StudySession({ items, collectionID, doneTitle, error }: 
             </div>
           </div>
 
-          <div className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-2xl p-6 text-center shadow-sm flex flex-col items-center gap-4">
+          <div className="relative bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-2xl p-6 text-center shadow-sm flex flex-col items-center gap-4">
+            {item.speakText && (item.speakText === item.question || submitted) && (
+              <SpeakButton text={item.speakText} className="absolute top-3 right-3" />
+            )}
             {item.image && (
               <img src={item.image} alt="" className="max-h-40 max-w-full rounded-lg object-contain" />
             )}
@@ -240,10 +300,10 @@ export default function StudySession({ items, collectionID, doneTitle, error }: 
             ))}
           </div>
 
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between min-h-[44px]">
             <p className="text-xs text-gray-400 dark:text-slate-500 hidden sm:block">Press 1–{item.options.length} to select · Enter to confirm</p>
             <div className="flex items-center gap-2 ml-auto">
-              {submitted && loggedIn && (
+              {submitted && loggedIn && !item.isRetry && (
                 <div className="flex items-center gap-1">
                   <button
                     onClick={() => handleConfidence(-1)}

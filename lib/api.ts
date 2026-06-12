@@ -26,6 +26,7 @@ export type Collection = {
   UserID: string;
   Title: string;
   Description: string;
+  Type: "cards" | "tests";
   IsPublic: boolean;
   IsDraft: boolean;
   DraftOf: string | null;
@@ -106,7 +107,7 @@ export type BlitzItem =
 
 export type BlitzResponse = {
   items: BlitzItem[];
-  card_pool: { ID: string; Term: string }[];
+  card_pool: { ID: string; Term: string; Definition: string }[];
 };
 
 export type ProgressData = {
@@ -155,8 +156,8 @@ export const api = {
     listPublic: () => request<PublicCollection[]>("/public/collections"),
     get: (id: string) => request<Collection>(`/collections/${id}`),
     getPublic: (id: string) => request<Collection>(`/public/collections/${id}`),
-    create: (title: string, description: string, isPublic = false) =>
-      request<Collection>("/collections", { method: "POST", body: JSON.stringify({ title, description, is_public: isPublic }) }),
+    create: (title: string, description: string, type: "cards" | "tests" = "cards", isPublic = false) =>
+      request<Collection>("/collections", { method: "POST", body: JSON.stringify({ title, description, type, is_public: isPublic }) }),
     update: (id: string, title: string, description: string, isPublic: boolean) =>
       request<Collection>(`/collections/${id}`, { method: "PUT", body: JSON.stringify({ title, description, is_public: isPublic }) }),
     delete: (id: string) => request<void>(`/collections/${id}`, { method: "DELETE" }),
@@ -189,10 +190,10 @@ export const api = {
   progress: {
     get: (collectionID: string) =>
       request<ProgressData>(`/collections/${collectionID}/progress`),
-    update: (collectionID: string, itemType: "card" | "tq", itemID: string, correct: boolean, confidenceDelta: -1 | 0 | 1) =>
+    update: (collectionID: string, itemType: "card" | "tq", itemID: string, correct: boolean, confidenceDelta: -1 | 0 | 1, retry = false) =>
       request<{ level: number; next_review_at: string }>(`/collections/${collectionID}/progress`, {
         method: "POST",
-        body: JSON.stringify({ item_type: itemType, item_id: itemID, correct, confidence_delta: confidenceDelta }),
+        body: JSON.stringify({ item_type: itemType, item_id: itemID, correct, confidence_delta: confidenceDelta, retry }),
       }),
   },
   users: {
@@ -217,8 +218,8 @@ export const api = {
       request<void>(`/admin/collections/${collectionID}`, { method: "DELETE" }),
   },
   cards: {
-    add: (collectionID: string, term: string, definition: string, position: number) =>
-      request<Card>(`/collections/${collectionID}/cards`, { method: "POST", body: JSON.stringify({ term, definition, position }) }),
+    add: (collectionID: string, term: string, definition: string, image: string, position: number) =>
+      request<Card>(`/collections/${collectionID}/cards`, { method: "POST", body: JSON.stringify({ term, definition, image, position }) }),
     update: (collectionID: string, cardID: string, term: string, definition: string, position: number) =>
       request<Card>(`/collections/${collectionID}/cards/${cardID}`, { method: "PUT", body: JSON.stringify({ term, definition, position }) }),
     delete: (collectionID: string, cardID: string) =>
@@ -235,8 +236,8 @@ export const api = {
     },
   },
   tests: {
-    add: (collectionID: string, question: string, options: TestAnswer[], position: number) =>
-      request<TestQuestion>(`/collections/${collectionID}/tests`, { method: "POST", body: JSON.stringify({ question, options, position }) }),
+    add: (collectionID: string, question: string, options: TestAnswer[], image: string, position: number) =>
+      request<TestQuestion>(`/collections/${collectionID}/tests`, { method: "POST", body: JSON.stringify({ question, options, image, position }) }),
     update: (collectionID: string, tqID: string, question: string, options: TestAnswer[], position: number) =>
       request<TestQuestion>(`/collections/${collectionID}/tests/${tqID}`, { method: "PUT", body: JSON.stringify({ question, options, position }) }),
     delete: (collectionID: string, tqID: string) =>

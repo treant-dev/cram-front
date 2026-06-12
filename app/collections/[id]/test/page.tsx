@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { isLoggedIn } from "@/lib/auth";
-import { fromMix, type SessionItem } from "@/lib/session";
+import { fromTests, type SessionItem } from "@/lib/session";
 import StudySession from "@/components/StudySession";
 
 export default function TestPage(props: PageProps<"/collections/[id]/test">) {
@@ -15,8 +15,8 @@ export default function TestPage(props: PageProps<"/collections/[id]/test">) {
     props.params.then(({ id }) => {
       setCollectionID(id);
       return isLoggedIn() ? api.collections.get(id) : api.collections.getPublic(id);
-    }).then((s) => setItems(fromMix(s.Cards ?? [], s.TestQuestions ?? []))).catch(() => setError("Failed to load collection"));
+    }).then((s) => setItems(fromTests(s.TestQuestions ?? []))).catch(() => setError("Failed to load collection"));
   }, [props.params]);
 
-  return <StudySession items={items} collectionID={collectionID} doneTitle="Test complete!" error={error} />;
+  return <StudySession items={items} collectionID={collectionID} doneTitle="Test complete!" error={error} requeueWrongCards />;
 }
