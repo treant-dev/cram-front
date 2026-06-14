@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { api, Collection } from "@/lib/api";
+import { api, Collection, CollectionType } from "@/lib/api";
 import { isLoggedIn } from "@/lib/auth";
 import Navbar from "@/components/Navbar";
 
@@ -20,7 +20,7 @@ function CollectionItem({ c }: { c: Collection }) {
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
           <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400">
-            {c.Type === "tests" ? "Tests" : "Cards"}
+            {c.Type === "exercises" ? "Exercises" : c.Type === "tests" ? "Tests" : "Cards"}
           </span>
           <span className={`text-xs px-2 py-0.5 rounded-full ${c.IsPublic ? "bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400" : "bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400"}`}>
             {c.IsPublic ? "Public" : "Private"}
@@ -40,7 +40,7 @@ export default function HomePage() {
   const [showForm, setShowForm] = useState(false);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [type, setType] = useState<"cards" | "tests">("cards");
+  const [type, setType] = useState<CollectionType>("cards");
 
   useEffect(() => {
     if (!isLoggedIn()) { router.replace("/"); return; }
@@ -54,7 +54,9 @@ export default function HomePage() {
     e.preventDefault();
     if (!title.trim()) return;
     const col = await api.collections.create(title.trim(), description.trim(), type);
-    router.push(`/collections/${col.ID}?edit=1`);
+    // Exercises are import-only (no draft editor); land on the collection where the
+    // owner can import YAML. Cards/tests open straight into the draft editor.
+    router.push(type === "exercises" ? `/collections/${col.ID}` : `/collections/${col.ID}?edit=1`);
   }
 
   const skeleton = (
@@ -86,6 +88,7 @@ export default function HomePage() {
                 {([
                   { v: "cards", label: "Flashcards" },
                   { v: "tests", label: "Test questions" },
+                  { v: "exercises", label: "Exercises" },
                 ] as const).map((opt) => (
                   <button
                     key={opt.v}

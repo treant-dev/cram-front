@@ -3,12 +3,13 @@
 import { useEffect, useState, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { api, Collection, Card, TestQuestion, TestAnswer, ProgressData, ProgressEntry } from "@/lib/api";
+import { api, Collection, Card, TestQuestion, TestAnswer, Exercise, ProgressData, ProgressEntry } from "@/lib/api";
 import LevelDot from "@/components/LevelDot";
 import SpeakButton from "@/components/SpeakButton";
 import { isLoggedIn } from "@/lib/auth";
 import Navbar from "@/components/Navbar";
 import ImageUpload from "@/components/ImageUpload";
+import ExerciseWorksheet from "@/components/ExerciseWorksheet";
 
 const inputCls = "border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 placeholder:text-gray-400 dark:placeholder:text-slate-500";
 const formCls = "bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl p-4 mb-3 flex flex-col gap-3";
@@ -244,6 +245,134 @@ function trunc(s: string, n: number) {
   return s.length > n ? s.slice(0, n) + "…" : s;
 }
 
+// ── Exercise import panel (YAML) ───────────────────────────────────────────────
+
+const exampleYAML = `- type: bank
+  title: "Verb to be"
+  sentences:
+    - text: "How ___ you?"
+      answer: [are]
+    - text: "My ___ ___ Vasiliy"
+      answer: [name, is]
+  distractors: [am, was]
+- type: choice
+  sentences:
+    - text: "I saw ___ elephant"
+      answer: [an]
+      distractors: [[a, the, some]]
+    - text: "She ___ to work ___ bus"
+      answer: [goes, by]
+      distractors:
+        - [go, going]
+        - [on]`;
+
+function ExerciseImportPanel({ collectionID, onImported, onCancel }: {
+  collectionID: string;
+  onImported: () => void; // reload the collection (panel stays open to show the result)
+  onCancel: () => void;
+}) {
+  const [text, setText] = useState("");
+  const [importing, setImporting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<{ imported: number; skipped: number } | null>(null);
+
+  async function doImport() {
+    if (!text.trim()) return;
+    setImporting(true);
+    setError(null);
+    try {
+      const res = await api.exercises.importText(collectionID, text);
+      setResult(res);
+      setText("");
+      onImported();
+    } catch {
+      setError("Import failed — check the YAML/JSON format.");
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  return (
+    <div className={formCls}>
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-sm font-medium text-gray-700 dark:text-slate-300">Import exercises (YAML or JSON)</p>
+        <a href="/exercises-format.md" download="cram-exercises-format.md" className="text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:underline shrink-0">↓ AI format guide</a>
+      </div>
+      <textarea
+        className={inputCls + " min-h-[180px] resize-y font-mono text-xs"}
+        placeholder={exampleYAML}
+        value={text}
+        onChange={(e) => { setText(e.target.value); setResult(null); }}
+        autoFocus
+      />
+      {error && <p className="text-xs text-red-500 dark:text-red-400">{error}</p>}
+      {result && (
+        <p className="text-xs font-medium text-green-600 dark:text-green-400">
+          ✓ Imported {result.imported} exercise{result.imported !== 1 ? "s" : ""}
+          {result.skipped > 0 && <span className="text-amber-600 dark:text-amber-400"> · {result.skipped} skipped (invalid)</span>}
+        </p>
+      )}
+      <div className="flex gap-2 justify-end">
+        <button type="button" onClick={onCancel} className="text-sm text-gray-500 dark:text-slate-400 px-3 py-1 hover:text-gray-700 dark:hover:text-slate-200">{result ? "Done" : "Cancel"}</button>
+        <button
+          onClick={doImport}
+          disabled={importing || !text.trim()}
+          className="bg-indigo-600 text-white px-4 py-1.5 rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50"
+        >
+          {importing ? "Importing…" : "Import"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Manage panel: list exercises with a delete button each (append-only import, this is how
+// you remove items). Direct delete on the published collection — no draft flow.
+function ExerciseManagePanel({ collectionID, exercises, onChanged, onClose }: {
+  collectionID: string;
+  exercises: Exercise[];
+  onChanged: () => void;
+  onClose: () => void;
+}) {
+  const [deleting, setDeleting] = useState<string | null>(null);
+
+  async function del(exID: string) {
+    setDeleting(exID);
+    try {
+      await api.exercises.delete(collectionID, exID);
+      onChanged();
+    } finally {
+      setDeleting(null);
+    }
+  }
+
+  return (
+    <div className={formCls}>
+      <div className="flex items-center justify-between">
+        <p className="text-sm font-medium text-gray-700 dark:text-slate-300">Edit exercises</p>
+        <button type="button" onClick={onClose} className="text-sm text-gray-500 dark:text-slate-400 px-2 hover:text-gray-700 dark:hover:text-slate-200">Done</button>
+      </div>
+      {exercises.length === 0 ? (
+        <p className="text-sm text-gray-400 dark:text-slate-500">No exercises.</p>
+      ) : (
+        <ul className="flex flex-col gap-2">
+          {exercises.map((ex) => (
+            <li key={ex.ID} className="flex items-center gap-3 bg-gray-50 dark:bg-slate-800 rounded-lg px-3 py-2">
+              <span className="text-xs px-2 py-0.5 rounded-full bg-gray-200 dark:bg-slate-700 text-gray-500 dark:text-slate-400 capitalize shrink-0">{ex.Kind}</span>
+              <span className="text-sm text-gray-700 dark:text-slate-300 truncate flex-1 min-w-0">
+                {ex.Title || `${ex.Sentences?.length ?? 0} sentence${(ex.Sentences?.length ?? 0) !== 1 ? "s" : ""}`}
+              </span>
+              <button type="button" onClick={() => del(ex.ID)} disabled={deleting === ex.ID} className="text-sm text-red-500 hover:text-red-600 dark:hover:text-red-300 shrink-0 disabled:opacity-50">
+                {deleting === ex.ID ? "…" : "Delete"}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 
 // ── Card form ────────────────────────────────────────────────────────────────
 
@@ -404,11 +533,15 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
   const [showQuickAdd, setShowQuickAdd] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [showImportTest, setShowImportTest] = useState(false);
+  const [showImportEx, setShowImportEx] = useState(false);
+  const [showManageEx, setShowManageEx] = useState(false);
   const [saving, setSaving] = useState(false);
   const [shareToken, setShareToken] = useState<string | null>(null);
   const [shareLoading, setShareLoading] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
   const [itemProgress, setItemProgress] = useState<Record<string, ProgressEntry>>({});
+  // sentenceID -> previously submitted words; null until loaded (gates worksheet render)
+  const [savedResults, setSavedResults] = useState<Record<string, string[]> | null>(null);
   const [isFollowed, setIsFollowed] = useState(false);
   const [followLoading, setFollowLoading] = useState(false);
 
@@ -433,6 +566,16 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
           for (const [id, entry] of Object.entries(data.test_questions)) merged[`tq:${id}`] = entry;
           setItemProgress(merged);
         }).catch(() => {});
+      }
+      // Restore saved exercise answers (only for exercises collections).
+      if (col.Type === "exercises" && loggedIn) {
+        api.exercises.getResults(col.ID).then((res) => {
+          const m: Record<string, string[]> = {};
+          for (const [sid, e] of Object.entries(res)) m[sid] = e.submitted;
+          setSavedResults(m);
+        }).catch(() => setSavedResults({}));
+      } else {
+        setSavedResults({});
       }
     }).catch(() => setError("Failed to load collection"));
   }, [router, props.params]);
@@ -711,8 +854,12 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
   // In view mode show active collection content; in edit mode show draft content.
   const cards = editMode ? editCards : (collection.Cards ?? []);
   const tests = editMode ? editTests : (collection.TestQuestions ?? []);
-  const isCards = collection.Type !== "tests";
+  const isExercises = collection.Type === "exercises";
+  const isCards = collection.Type === "cards";
   const isTests = collection.Type === "tests";
+  const exercises = collection.Exercises ?? [];
+  const typeLabel = isExercises ? "Exercises" : isTests ? "Tests" : "Cards";
+  const itemCount = isExercises ? exercises.length : isTests ? tests.length : cards.length;
   const hasFlip = isCards && cards.length >= 2;          // flip-card mode needs ≥2 cards
   const hasTest = isTests && tests.length >= 1;          // multiple-choice test (tests collections only)
   const hasBlitz = (isCards ? cards.length : tests.length) >= 1;
@@ -775,7 +922,7 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
         ) : (
           <div className="mb-4">
             <div className="flex items-center gap-2 mb-1">
-              <h1 className="text-2xl font-bold text-gray-900 dark:text-slate-100">{collection.Title}</h1>
+              <h1 className="text-2xl font-bold text-gray-900 dark:text-slate-100">{typeLabel} ({itemCount}): {collection.Title}</h1>
               <span className={`text-xs font-medium px-2 py-0.5 rounded-full border ${
                 collection.IsPublic
                   ? "bg-green-50 dark:bg-green-900/20 border-green-300 dark:border-green-700 text-green-700 dark:text-green-400"
@@ -788,8 +935,33 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
           </div>
         )}
 
+        {/* Exercises worksheet — entering the collection is the interactive sheet itself */}
+        {isExercises && !editMode && (
+          <div className="mb-8">
+            {exercises.length === 0 ? (
+              <div className="flex flex-col items-center gap-4 py-10 text-center">
+                <p className="text-sm text-gray-400 dark:text-slate-500">No exercises yet.</p>
+                {isOwner && (
+                  <>
+                    <p className="text-sm text-gray-500 dark:text-slate-400 max-w-sm">
+                      Generate exercises with an AI: download the format guide, paste it into ChatGPT/Claude with your topic, then <span className="font-medium">Import YAML</span> in settings below.
+                    </p>
+                    <a
+                      href="/exercises-format.md"
+                      download="cram-exercises-format.md"
+                      className="px-4 py-2 rounded-lg text-sm font-medium border border-indigo-300 dark:border-indigo-700 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-colors"
+                    >
+                      ↓ Download AI format guide
+                    </a>
+                  </>
+                )}
+              </div>
+            ) : savedResults !== null && <ExerciseWorksheet exercises={exercises} collectionID={collection.ID} saved={savedResults} />}
+          </div>
+        )}
+
         {/* Study mode buttons + quick-add */}
-        {!editMode && (hasBlitz || isOwner || currentUserID !== null) && (
+        {!isExercises && !editMode && (hasBlitz || isOwner || currentUserID !== null) && (
           <div className="flex gap-3 mb-8 flex-wrap items-center">
             {hasBlitz && currentUserID !== null && (
               allMastered ? (
@@ -844,17 +1016,17 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
         {/* ── Cards section ── */}
         {isCards && (editMode || cards.length > 0) && (
           <div className="mb-8">
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="font-semibold text-gray-700 dark:text-slate-300">Cards ({cards.length})</h2>
-              {editMode && (
+            {editMode && (
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="font-semibold text-gray-700 dark:text-slate-300">Cards ({cards.length})</h2>
                 <div className="flex gap-2">
                   <button onClick={() => { closeAllForms(); setShowCardForm((v) => !v); }}
                     className={`${btnBase} border-indigo-300 dark:border-indigo-700 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/40`}>+ Add card</button>
                   <button onClick={() => { closeAllForms(); setShowImport((v) => !v); }}
                     className={`${btnBase} border-indigo-300 dark:border-indigo-700 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/40`}>+ Import</button>
                 </div>
-              )}
-            </div>
+              </div>
+            )}
 
             {editMode && showImport && draftCollectionID && (
               <ImportPanel
@@ -906,17 +1078,17 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
         {/* ── Test questions section ── */}
         {isTests && (editMode || tests.length > 0) && (
           <div className="mb-8">
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="font-semibold text-gray-700 dark:text-slate-300">Test questions ({tests.length})</h2>
-              {editMode && (
+            {editMode && (
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="font-semibold text-gray-700 dark:text-slate-300">Test questions ({tests.length})</h2>
                 <div className="flex gap-2">
                   <button onClick={() => { closeAllForms(); setShowTestForm((v) => !v); }}
                     className={`${btnBase} border-indigo-300 dark:border-indigo-700 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/40`}>+ Add question</button>
                   <button onClick={() => { closeAllForms(); setShowImportTest((v) => !v); }}
                     className={`${btnBase} border-indigo-300 dark:border-indigo-700 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/40`}>+ Import</button>
                 </div>
-              )}
-            </div>
+              </div>
+            )}
 
             {editMode && showImportTest && draftCollectionID && (
               <ImportTestPanel
@@ -973,7 +1145,8 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
         {!editMode && isOwner && (
           <div className="border-t border-gray-100 dark:border-slate-800 pt-6 mt-2 flex flex-col gap-3">
             <div className="flex flex-wrap gap-2">
-              {hasDraft ? (
+              {/* Exercises have no draft editor (yet) — they're edited via YAML import above. */}
+              {!isExercises && (hasDraft ? (
                 <>
                   <button onClick={enterEditMode} disabled={saving} className={`${btnBase} border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/40`}>
                     Continue editing
@@ -986,33 +1159,64 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
                 <button onClick={enterEditMode} disabled={saving} className={`${btnBase} border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700`}>
                   {saving ? "Loading…" : "Edit"}
                 </button>
+              ))}
+              {isExercises && (
+                <button onClick={() => { setShowManageEx(false); setShowImportEx((v) => !v); }} className={`${btnBase} border-indigo-300 dark:border-indigo-700 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/40`}>
+                  + Import YAML
+                </button>
+              )}
+              {isExercises && exercises.length > 0 && (
+                <button onClick={() => { setShowImportEx(false); setShowManageEx((v) => !v); }} className={`${btnBase} border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700`}>
+                  Edit
+                </button>
               )}
               <button onClick={togglePublic} className={`${btnBase} border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700`}>
                 {collection.IsPublic ? "Make private" : "Make public"}
               </button>
-              <button onClick={generateShareLink} disabled={shareLoading || !!shareToken} className={`${btnBase} border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700 disabled:opacity-40`}>
-                {shareLoading ? "Generating…" : "Create share link"}
-              </button>
-              <button onClick={deleteCollection} className={`${btnBase} border-red-200 dark:border-red-800 bg-white dark:bg-slate-800 text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20`}>
+              <button onClick={deleteCollection} className={`${btnBase} ml-auto border-red-200 dark:border-red-800 bg-white dark:bg-slate-800 text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20`}>
                 Delete
               </button>
             </div>
 
-            {shareToken && (
-              <div className="flex items-center gap-2 flex-wrap">
-                <input
-                  readOnly
-                  value={`${typeof window !== "undefined" ? window.location.origin : ""}/shared/${shareToken}`}
-                  className={inputCls + " flex-1 min-w-0 font-mono text-xs"}
-                />
-                <button onClick={copyShareLink} className={`${btnBase} border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700 shrink-0`}>
-                  {shareCopied ? "Copied!" : "Copy"}
-                </button>
-                <button onClick={revokeShareLink} disabled={shareLoading} className={`${btnBase} border-red-200 dark:border-red-800 bg-white dark:bg-slate-800 text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 shrink-0`}>
-                  Revoke
-                </button>
-              </div>
+            {isExercises && showImportEx && (
+              <ExerciseImportPanel
+                collectionID={collection.ID}
+                onCancel={() => setShowImportEx(false)}
+                onImported={async () => { setCollection(await api.collections.get(collection.ID)); }}
+              />
             )}
+            {isExercises && showManageEx && (
+              <ExerciseManagePanel
+                collectionID={collection.ID}
+                exercises={exercises}
+                onChanged={async () => { setCollection(await api.collections.get(collection.ID)); }}
+                onClose={() => setShowManageEx(false)}
+              />
+            )}
+
+            {/* Share link — its own block: a Share button that becomes Revoke once a link exists.
+                Right-anchored so the button stays put when the link field appears. */}
+            <div className="flex items-center justify-end gap-2 flex-wrap border-t border-gray-100 dark:border-slate-800 pt-3">
+              {shareToken ? (
+                <>
+                  <input
+                    readOnly
+                    onClick={copyShareLink}
+                    title="Click to copy"
+                    value={`${typeof window !== "undefined" ? window.location.origin : ""}/shared/${shareToken}`}
+                    className={inputCls + " flex-1 min-w-0 font-mono text-xs cursor-pointer"}
+                  />
+                  {shareCopied && <span className="text-xs font-medium text-green-600 dark:text-green-400 shrink-0">Copied!</span>}
+                  <button onClick={revokeShareLink} disabled={shareLoading} className={`${btnBase} border-red-200 dark:border-red-800 bg-white dark:bg-slate-800 text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 shrink-0 disabled:opacity-40`}>
+                    {shareLoading ? "…" : "Revoke"}
+                  </button>
+                </>
+              ) : (
+                <button onClick={generateShareLink} disabled={shareLoading} className={`${btnBase} border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700 disabled:opacity-40`}>
+                  {shareLoading ? "Generating…" : "Share"}
+                </button>
+              )}
+            </div>
           </div>
         )}
       </main>

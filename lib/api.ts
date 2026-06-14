@@ -21,12 +21,14 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return res.json();
 }
 
+export type CollectionType = "cards" | "tests" | "exercises";
+
 export type Collection = {
   ID: string;
   UserID: string;
   Title: string;
   Description: string;
-  Type: "cards" | "tests";
+  Type: CollectionType;
   IsPublic: boolean;
   IsDraft: boolean;
   DraftOf: string | null;
@@ -34,6 +36,7 @@ export type Collection = {
   ShareToken: string | null;
   Cards: Card[] | null;
   TestQuestions: TestQuestion[] | null;
+  Exercises: Exercise[] | null;
   CreatedAt: string;
   UpdatedAt: string;
 };
@@ -83,6 +86,29 @@ export type TestQuestion = {
   Question: string;
   Options: TestAnswer[];
   Image: string;
+  Position: number;
+  CreatedAt: string;
+  UpdatedAt: string;
+};
+
+// One prompt within an exercise. `text` contains one or more "___" blanks; `answer`
+// holds the correct word for each blank in order. For "choice" exercises `distractors`
+// holds the wrong option words per blank (`distractors[i]` for blank `i`).
+export type ExerciseSentence = {
+  id: string;
+  text: string;
+  answer: string[];
+  distractors?: string[][]; // choice only: wrong options per blank (distractors[i] for blank i)
+  position: number;
+};
+
+export type Exercise = {
+  ID: string;
+  CollectionID: string;
+  Kind: "bank" | "choice";
+  Title: string;
+  Sentences: ExerciseSentence[];
+  Distractors: string[] | null; // bank only: extra words for the shared pool
   Position: number;
   CreatedAt: string;
   UpdatedAt: string;
@@ -156,7 +182,7 @@ export const api = {
     listPublic: () => request<PublicCollection[]>("/public/collections"),
     get: (id: string) => request<Collection>(`/collections/${id}`),
     getPublic: (id: string) => request<Collection>(`/public/collections/${id}`),
-    create: (title: string, description: string, type: "cards" | "tests" = "cards", isPublic = false) =>
+    create: (title: string, description: string, type: CollectionType = "cards", isPublic = false) =>
       request<Collection>("/collections", { method: "POST", body: JSON.stringify({ title, description, type, is_public: isPublic }) }),
     update: (id: string, title: string, description: string, isPublic: boolean) =>
       request<Collection>(`/collections/${id}`, { method: "PUT", body: JSON.stringify({ title, description, is_public: isPublic }) }),
@@ -195,6 +221,12 @@ export const api = {
         method: "POST",
         body: JSON.stringify({ item_type: itemType, item_id: itemID, correct, confidence_delta: confidenceDelta, retry }),
       }),
+    reset: (collectionID: string) =>
+      request<void>(`/collections/${collectionID}/progress`, { method: "DELETE" }),
+    resetCard: (collectionID: string, cardID: string) =>
+      request<void>(`/collections/${collectionID}/cards/${cardID}/progress`, { method: "DELETE" }),
+    resetTest: (collectionID: string, tqID: string) =>
+      request<void>(`/collections/${collectionID}/tests/${tqID}/progress`, { method: "DELETE" }),
   },
   users: {
     list: () => request<UserProfile[]>("/users"),
@@ -247,6 +279,29 @@ export const api = {
       form.append("file", new Blob([text], { type: "text/csv" }), "import.csv");
       return request<{ imported: number }>(`/collections/${collectionID}/tests/import`, { method: "POST", body: form });
     },
+  },
+  exercises: {
+    // Import a YAML/JSON document (raw body) into an exercises collection.
+    importText: (collectionID: string, text: string) =>
+      request<{ imported: number; skipped: number }>(`/collections/${collectionID}/exercises/import`, {
+        method: "POST",
+        body: text,
+        headers: { "Content-Type": "application/x-yaml" },
+      }),
+    delete: (collectionID: string, exID: string) =>
+      request<void>(`/collections/${collectionID}/exercises/${exID}`, { method: "DELETE" }),
+    // Save each answered sentence's words + correctness (one-off worksheets, no leveling).
+    recordResults: (collectionID: string, results: { sentence_id: string; correct: boolean; submitted: string[] }[]) =>
+      request<void>(`/collections/${collectionID}/exercises/results`, {
+        method: "POST",
+        body: JSON.stringify({ results }),
+      }),
+    // The user's saved answers, keyed by sentence id — used to restore worksheet state.
+    getResults: (collectionID: string) =>
+      request<Record<string, { correct: boolean; submitted: string[] }>>(`/collections/${collectionID}/exercises/results`),
+    // Clear the user's own answers for one exercise (retake).
+    resetExercise: (collectionID: string, exID: string) =>
+      request<void>(`/collections/${collectionID}/exercises/${exID}/progress`, { method: "DELETE" }),
   },
   blitz: {
     get: (collectionID: string) =>

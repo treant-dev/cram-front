@@ -1,0 +1,348 @@
+"use client";
+
+import { useRef, useState, type TouchEvent as ReactTouchEvent } from "react";
+import { Exercise, api } from "@/lib/api";
+import { segments, isCorrect, bankPool, gapOptions } from "@/lib/exercises";
+
+type SentenceResult = { id: string; correct: boolean; submitted: string[] };
+type Nav = { isFirst: boolean; isLast: boolean; onPrev: () => void; onNext: () => void };
+type BlockProps = {
+  ex: Exercise;
+  saved: Record<string, string[]>; // sentenceId -> submitted words; restores the answered state
+  onCheck: (results: SentenceResult[]) => void;
+  onReset: () => void;
+  nav: Nav;
+};
+
+function shuffle<T>(arr: T[]): T[] {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+const card = "bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-2xl p-6 shadow-sm";
+// matches the blitz/cards Confirm button (StudySession)
+const confirmBtn =
+  "border border-indigo-400 dark:border-indigo-600 text-indigo-600 dark:text-indigo-400 px-5 py-2 rounded-xl font-medium hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-colors";
+const resetBtn =
+  "px-5 py-2 rounded-xl font-medium border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors";
+// solid indigo, like the blitz "Next →" (forward action after answering)
+const nextBtn =
+  "bg-indigo-600 text-white px-5 py-2 rounded-xl font-medium hover:bg-indigo-700 transition-colors";
+const navBtn =
+  "text-sm font-medium px-3 py-1.5 rounded-lg text-gray-500 dark:text-slate-400 hover:text-gray-800 dark:hover:text-slate-200 transition-colors";
+
+// blitz-style coloured pill per exercise kind
+const kindBadge: Record<string, string> = {
+  bank: "bg-indigo-100 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-400",
+  choice: "bg-purple-100 text-purple-600 dark:bg-purple-900/40 dark:text-purple-400",
+};
+
+// A blank slot — shared by bank and choice so both look identical.
+const slotBase = "inline-flex items-center justify-center align-middle mx-1 h-7 min-w-[3rem] px-2 rounded-md border text-sm";
+function slotColor(state: "empty" | "filled" | "correct" | "wrong"): string {
+  switch (state) {
+    case "correct": return "border-green-400 bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-300";
+    case "wrong": return "border-red-400 bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300";
+    case "filled": return "border-indigo-300 dark:border-indigo-700 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300";
+    default: return "border-dashed border-gray-300 dark:border-slate-600 text-gray-300 dark:text-slate-600";
+  }
+}
+
+// Bottom bar lives OUTSIDE the card (under the border).
+//   Mobile (stepper, 3 slots): [← Prev] · [Skip/Reset] · [Confirm/Next →]  — slots keep
+//     their role (right = forward action, centre = secondary), so nothing jumps.
+//   Desktop (all blocks visible, no nav): a single centred action that swaps Confirm↔Reset
+//     in place — a lone button reads best centred (no left hint to balance it like blitz).
+function BlockActions({ checked, onConfirm, onReset, nav }: {
+  checked: boolean; onConfirm: () => void; onReset: () => void; nav: Nav;
+}) {
+  return (
+    <>
+      <div className="grid grid-cols-3 items-center mt-3 sm:hidden">
+        <div className="justify-self-start">
+          {!nav.isFirst && <button type="button" onClick={nav.onPrev} className={navBtn}>← Prev</button>}
+        </div>
+        <div className="justify-self-center">
+          {checked
+            ? <button type="button" onClick={onReset} className={resetBtn}>Reset</button>
+            : (!nav.isLast && <button type="button" onClick={nav.onNext} className={navBtn}>Skip</button>)}
+        </div>
+        <div className="justify-self-end">
+          {checked
+            ? (!nav.isLast && <button type="button" onClick={nav.onNext} className={nextBtn}>Next →</button>)
+            : <button type="button" onClick={onConfirm} className={confirmBtn}>Confirm</button>}
+        </div>
+      </div>
+      <div className="hidden sm:flex justify-center mt-3">
+        {checked
+          ? <button type="button" onClick={onReset} className={resetBtn}>Reset</button>
+          : <button type="button" onClick={onConfirm} className={confirmBtn}>Confirm</button>}
+      </div>
+    </>
+  );
+}
+
+// ── bank: shared shuffled word pool, drag-and-drop (or tap) into blanks ────────
+type PoolWord = { id: string; word: string };
+
+function BankBlock({ ex, saved, onCheck, onReset, nav }: BlockProps) {
+  const [poolWords] = useState<PoolWord[]>(() =>
+    shuffle(bankPool(ex).map((word, i) => ({ id: `p${i}`, word })))
+  );
+  const blankKeys = ex.Sentences.flatMap((s) => s.answer.map((_, i) => `${s.id}:${i}`));
+
+  const [placed, setPlaced] = useState<Record<string, string>>(() => {
+    const init: Record<string, string> = {};
+    const used = new Set<string>();
+    for (const s of ex.Sentences) {
+      const sub = saved[s.id];
+      if (!sub) continue;
+      sub.forEach((word, i) => {
+        const m = poolWords.find((p) => p.word === word && !used.has(p.id));
+        if (m) { init[`${s.id}:${i}`] = m.id; used.add(m.id); }
+      });
+    }
+    return init;
+  });
+  const [checked, setChecked] = useState(() => ex.Sentences.some((s) => saved[s.id]));
+  const dragRef = useRef<{ id: string; from?: string } | null>(null);
+
+  const wordById = (id: string) => poolWords.find((p) => p.id === id)?.word ?? "";
+  const usedIds = new Set(Object.values(placed));
+  const available = poolWords.filter((p) => !usedIds.has(p.id));
+  const answerOf = (key: string) => {
+    const [sid, idx] = key.split(":");
+    const s = ex.Sentences.find((x) => x.id === sid)!;
+    return s.answer[Number(idx)];
+  };
+
+  function placeAt(key: string, id: string, from?: string) {
+    if (checked) return;
+    setPlaced((prev) => {
+      const next = { ...prev };
+      for (const k of Object.keys(next)) if (next[k] === id) delete next[k];
+      if (from && from !== key) delete next[from];
+      next[key] = id;
+      return next;
+    });
+  }
+  function clearBlank(key: string) {
+    if (checked) return;
+    setPlaced((prev) => { const next = { ...prev }; delete next[key]; return next; });
+  }
+  function tapWord(id: string) {
+    const firstEmpty = blankKeys.find((k) => !placed[k]);
+    if (firstEmpty) placeAt(firstEmpty, id);
+  }
+
+  function slotClass(key: string) {
+    const id = placed[key];
+    if (!id) return slotColor("empty");
+    if (!checked) return slotColor("filled");
+    return wordById(id) === answerOf(key) ? slotColor("correct") : slotColor("wrong");
+  }
+
+  return (
+    <>
+      <section className={card}>
+        <div className="flex flex-col gap-4">
+          {!checked && (
+            <div
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={() => { const d = dragRef.current; if (d?.from) clearBlank(d.from); dragRef.current = null; }}
+              className="flex flex-wrap gap-2 min-h-[2.25rem] p-1 rounded-lg bg-gray-50 dark:bg-slate-800/50"
+            >
+              {available.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  draggable
+                  onDragStart={() => { dragRef.current = { id: p.id }; }}
+                  onClick={() => tapWord(p.id)}
+                  className="text-sm px-2.5 py-1 rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-800 dark:text-slate-200 hover:border-indigo-300 dark:hover:border-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 cursor-grab active:cursor-grabbing"
+                >
+                  {p.word}
+                </button>
+              ))}
+              {available.length === 0 && <span className="text-xs text-gray-400 dark:text-slate-500 px-1 self-center">all words placed</span>}
+            </div>
+          )}
+
+          <div className="flex flex-col gap-3">
+            {ex.Sentences.map((s) => {
+              const parts = segments(s.text);
+              return (
+                <div key={s.id} className="text-gray-900 dark:text-slate-100 leading-relaxed">
+                  {parts.map((part, i) => {
+                    const key = `${s.id}:${i}`;
+                    const id = placed[key];
+                    return (
+                      <span key={i}>
+                        {part}
+                        {i < parts.length - 1 && (
+                          <span
+                            onDragOver={(e) => e.preventDefault()}
+                            onDrop={() => { const d = dragRef.current; if (d) placeAt(key, d.id, d.from); dragRef.current = null; }}
+                            draggable={!checked && !!id}
+                            onDragStart={() => { if (id) dragRef.current = { id, from: key }; }}
+                            onClick={() => id && clearBlank(key)}
+                            className={`${slotBase} ${id && !checked ? "cursor-pointer" : ""} ${slotClass(key)}`}
+                          >
+                            {id ? wordById(id) : " "}
+                          </span>
+                        )}
+                      </span>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+      <BlockActions
+        checked={checked}
+        nav={nav}
+        onConfirm={() => {
+          setChecked(true);
+          onCheck(ex.Sentences.map((s) => {
+            const submitted = s.answer.map((_, i) => wordById(placed[`${s.id}:${i}`] ?? ""));
+            return { id: s.id, submitted, correct: isCorrect(s.answer, submitted) };
+          }));
+        }}
+        onReset={() => { onReset(); setChecked(false); setPlaced({}); }}
+      />
+    </>
+  );
+}
+
+// ── choice: an inline dropdown per gap ────────────────────────────────────────
+function ChoiceBlock({ ex, saved, onCheck, onReset, nav }: BlockProps) {
+  const [opts] = useState<Record<string, string[][]>>(() =>
+    Object.fromEntries(ex.Sentences.map((s) => [s.id, gapOptions(s).map((g) => shuffle(g))]))
+  );
+  const [sel, setSel] = useState<Record<string, string[]>>(() =>
+    Object.fromEntries(ex.Sentences.map((s) => [s.id, s.answer.map((_, i) => saved[s.id]?.[i] ?? "")]))
+  );
+  const [checked, setChecked] = useState(() => ex.Sentences.some((s) => saved[s.id]));
+
+  function setGap(sid: string, i: number, val: string) {
+    if (checked) return;
+    setSel((prev) => ({ ...prev, [sid]: prev[sid].map((v, j) => (j === i ? val : v)) }));
+  }
+  function gapState(sid: string, answer: string, i: number) {
+    const val = sel[sid][i];
+    return !checked ? (val ? "filled" : "empty") : val === answer ? "correct" : "wrong";
+  }
+
+  return (
+    <>
+      <section className={card}>
+        <div className="flex flex-col gap-3">
+          {ex.Sentences.map((s) => {
+            const parts = segments(s.text);
+            return (
+              <div key={s.id} className="text-gray-900 dark:text-slate-100 leading-relaxed">
+                {parts.map((part, i) => {
+                  if (i >= parts.length - 1) return <span key={i}>{part}</span>;
+                  const state = gapState(s.id, s.answer[i], i);
+                  return (
+                    <span key={i}>
+                      {part}
+                      <select
+                        value={sel[s.id][i]}
+                        onChange={(e) => setGap(s.id, i, e.target.value)}
+                        disabled={checked}
+                        className={`align-middle mx-1 h-7 min-w-[3.5rem] rounded-md border text-sm px-1 ${slotColor(state)}`}
+                      >
+                        <option value="">—</option>
+                        {opts[s.id][i].map((w) => <option key={w} value={w}>{w}</option>)}
+                      </select>
+                    </span>
+                  );
+                })}
+              </div>
+            );
+          })}
+        </div>
+      </section>
+      <BlockActions
+        checked={checked}
+        nav={nav}
+        onConfirm={() => {
+          setChecked(true);
+          onCheck(ex.Sentences.map((s) => ({ id: s.id, submitted: sel[s.id], correct: isCorrect(s.answer, sel[s.id]) })));
+        }}
+        onReset={() => { onReset(); setChecked(false); setSel(Object.fromEntries(ex.Sentences.map((s) => [s.id, s.answer.map(() => "")]))); }}
+      />
+    </>
+  );
+}
+
+export default function ExerciseWorksheet({ exercises, collectionID, saved }: {
+  exercises: Exercise[];
+  collectionID: string;
+  saved: Record<string, string[]>;
+}) {
+  const [current, setCurrent] = useState(0);
+
+  function record(results: SentenceResult[]) {
+    api.exercises
+      .recordResults(collectionID, results.map((r) => ({ sentence_id: r.id, correct: r.correct, submitted: r.submitted })))
+      .catch(() => {});
+  }
+  function reset(exID: string) {
+    api.exercises.resetExercise(collectionID, exID).catch(() => {});
+  }
+
+  // Swipe between blocks on touch devices (mobile only — on desktop all blocks are shown).
+  const touchStart = useRef<{ x: number; y: number } | null>(null);
+  function onTouchStart(e: ReactTouchEvent) {
+    const t = e.changedTouches[0];
+    touchStart.current = { x: t.clientX, y: t.clientY };
+  }
+  function onTouchEnd(e: ReactTouchEvent) {
+    const s = touchStart.current;
+    touchStart.current = null;
+    if (!s) return;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - s.x;
+    const dy = t.clientY - s.y;
+    if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy)) return;
+    if (dx < 0) setCurrent((c) => Math.min(exercises.length - 1, c + 1));
+    else setCurrent((c) => Math.max(0, c - 1));
+  }
+
+  const nav = (i: number): Nav => ({
+    isFirst: i === 0,
+    isLast: i === exercises.length - 1,
+    onPrev: () => setCurrent((c) => Math.max(0, c - 1)),
+    onNext: () => setCurrent((c) => Math.min(exercises.length - 1, c + 1)),
+  });
+
+  return (
+    <div className="flex flex-col gap-8" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+      {exercises.map((ex, i) => (
+        <div key={ex.ID} className={`${i === current ? "block" : "hidden"} sm:block`}>
+          {/* header sits outside the card, like the counter/badge in blitz */}
+          <div className="flex items-center justify-between gap-2 mb-2 px-1">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="text-sm text-gray-400 dark:text-slate-500 shrink-0">{i + 1} / {exercises.length}</span>
+              {ex.Title && <h3 className="font-semibold text-gray-700 dark:text-slate-300 truncate">{ex.Title}</h3>}
+            </div>
+            <span className={`text-xs font-medium px-2 py-0.5 rounded-full shrink-0 capitalize ${kindBadge[ex.Kind] ?? "bg-gray-100 text-gray-500 dark:bg-slate-800 dark:text-slate-400"}`}>
+              {ex.Kind}
+            </span>
+          </div>
+          {ex.Kind === "bank"
+            ? <BankBlock ex={ex} saved={saved} onCheck={record} onReset={() => reset(ex.ID)} nav={nav(i)} />
+            : <ChoiceBlock ex={ex} saved={saved} onCheck={record} onReset={() => reset(ex.ID)} nav={nav(i)} />}
+        </div>
+      ))}
+    </div>
+  );
+}
