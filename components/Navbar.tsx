@@ -1,14 +1,22 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { logout, isLoggedIn } from "@/lib/auth";
 import { useCurrentUser } from "@/contexts/UserContext";
 
+// isLoggedIn() reads localStorage, which is unavailable during SSR. useSyncExternalStore
+// returns the server snapshot (false) during hydration so the first client render matches
+// the server markup, then switches to the real client value — avoiding a hydration mismatch.
+function subscribeLoggedIn(callback: () => void) {
+  window.addEventListener("storage", callback);
+  return () => window.removeEventListener("storage", callback);
+}
+
 export default function Navbar() {
   const pathname = usePathname();
-  const loggedIn = isLoggedIn();
+  const loggedIn = useSyncExternalStore(subscribeLoggedIn, isLoggedIn, () => false);
   const currentUser = useCurrentUser();
   const isAdmin = currentUser?.role === "admin";
   const [menuOpen, setMenuOpen] = useState(false);

@@ -258,6 +258,10 @@ export default function StudySession({ items, collectionID, doneTitle, error, re
   }
 
   const shownLevel = displayLevel ?? currentLevel;
+  // "See results" only on the genuine last step: the working queue grows when a wrong
+  // answer is requeued, so account for a requeue that this answer will trigger.
+  const willRequeue = requeueWrongCards && submitted && !item.isRetry && !isCorrect;
+  const isLastStep = index + 1 >= queue.length && !willRequeue;
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -342,7 +346,7 @@ export default function StudySession({ items, collectionID, doneTitle, error, re
               )}
               {submitted && (
                 <button onClick={next} className="bg-indigo-600 text-white px-6 py-2.5 rounded-xl font-medium hover:bg-indigo-700 transition-colors">
-                  {index + 1 >= items.length ? "See results" : "Next →"}
+                  {isLastStep ? "See results" : "Next →"}
                 </button>
               )}
             </div>
