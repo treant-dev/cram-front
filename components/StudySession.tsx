@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
 import OptionButton from "@/components/OptionButton";
 import SpeakButton from "@/components/SpeakButton";
 import LevelDot from "@/components/LevelDot";
-import { api, type StudyAnswer, type ProgressEntry } from "@/lib/api";
+import { api, type ProgressEntry } from "@/lib/api";
 import { isLoggedIn } from "@/lib/auth";
 import type { SessionItem } from "@/lib/session";
 
@@ -63,7 +63,6 @@ function nextReviewFromLevel(level: number): string {
 export default function StudySession({ items, collectionID, doneTitle, error, requeueWrongCards }: Props) {
   const router = useRouter();
   const loggedIn = isLoggedIn();
-  const sessionID = useMemo(() => crypto.randomUUID(), []);
   // Working queue: starts as `items` and may grow when wrong cards are requeued.
   // `total` is the original count and is the denominator for the X/N score —
   // requeued copies never inflate it.
@@ -76,7 +75,6 @@ export default function StudySession({ items, collectionID, doneTitle, error, re
   const [isCorrect, setIsCorrect] = useState(false);
   const [score, setScore] = useState(0);
   const [done, setDone] = useState(false);
-  const [results, setResults] = useState<StudyAnswer[]>([]);
 
   // Progress state: keyed by "card:<id>" or "tq:<id>"
   const [progress, setProgress] = useState<Record<string, ProgressEntry>>({});
@@ -105,9 +103,6 @@ export default function StudySession({ items, collectionID, doneTitle, error, re
 
   useEffect(() => {
     if (!done || !collectionID) return;
-    if (isLoggedIn() && results.length > 0) {
-      api.study.submit(collectionID, sessionID, results).catch(() => {});
-    }
     const t = setTimeout(() => router.replace(`/collections/${collectionID}`), 1700);
     return () => clearTimeout(t);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -131,15 +126,9 @@ export default function StudySession({ items, collectionID, doneTitle, error, re
         : applyAnswer(currentLevel, correct, currentEntry?.next_review_at)
     );
     setConfidenceDelta(null);
-    // Score and session history count first attempts only; retries are practice.
+    // Score counts first attempts only; retries are practice.
     if (item.isRetry) return;
     if (correct) setScore((sc) => sc + 1);
-    setResults((prev) => [
-      ...prev,
-      item.sourceType === "card"
-        ? { card_id: item.sourceID, correct }
-        : { tq_id: item.sourceID, selected_option_texts: [...selected] },
-    ]);
   }, [submitted, selected, item, currentLevel]);
 
   const next = useCallback(() => {

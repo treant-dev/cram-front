@@ -102,24 +102,30 @@ export type ExerciseSentence = {
   position: number;
 };
 
-export type Exercise = {
+// Exercise is a discriminated union on Kind — each kind carries only its own fields.
+type BaseExercise = {
   ID: string;
   CollectionID: string;
-  Kind: "bank" | "choice";
   Title: string;
-  Sentences: ExerciseSentence[];
-  Distractors: string[] | null; // bank only: extra words for the shared pool
   Position: number;
   CreatedAt: string;
   UpdatedAt: string;
 };
-
-export type StudyAnswer = {
-  card_id?: string;
-  tq_id?: string;
-  correct?: boolean;               // cards only (self-assessed)
-  selected_option_texts?: string[]; // test questions only (server-verified)
+export type BankExercise = BaseExercise & {
+  Kind: "bank";
+  Sentences: ExerciseSentence[];
+  Distractors: string[] | null; // extra words for the shared pool
 };
+export type ChoiceExercise = BaseExercise & {
+  Kind: "choice";
+  Sentences: ExerciseSentence[];
+};
+export type QuizExercise = BaseExercise & {
+  Kind: "quiz";
+  Question: string; // multiple-choice question (a "test")
+  Options: TestAnswer[];
+};
+export type Exercise = BankExercise | ChoiceExercise | QuizExercise;
 
 export type ProgressEntry = {
   level: number;
@@ -139,17 +145,6 @@ export type BlitzResponse = {
 export type ProgressData = {
   cards: Record<string, ProgressEntry>;
   test_questions: Record<string, ProgressEntry>;
-};
-
-export type DailyBucket = {
-  date: string;
-  correct: number;
-  incorrect: number;
-};
-
-export type StudyHistoryData = {
-  cards: Record<string, DailyBucket[]>;
-  test_questions: Record<string, DailyBucket[]>;
 };
 
 export type HomeData = {
@@ -204,15 +199,6 @@ export const api = {
     unfollow: (collectionID: string) =>
       request<void>(`/collections/${collectionID}/follow`, { method: "DELETE" }),
   },
-  study: {
-    submit: (collectionID: string, sessionID: string, answers: StudyAnswer[]) =>
-      request<void>(`/collections/${collectionID}/study`, {
-        method: "POST",
-        body: JSON.stringify({ session_id: sessionID, answers }),
-      }),
-    history: (collectionID: string, days = 30) =>
-      request<StudyHistoryData>(`/collections/${collectionID}/history?days=${days}`),
-  },
   progress: {
     get: (collectionID: string) =>
       request<ProgressData>(`/collections/${collectionID}/progress`),
@@ -259,12 +245,13 @@ export const api = {
     import: (collectionID: string, file: File) => {
       const form = new FormData();
       form.append("file", file);
-      return request<{ imported: number }>(`/collections/${collectionID}/cards/import`, { method: "POST", body: form });
+      return request<{ imported: number; skipped: number }>(`/collections/${collectionID}/cards/import`, { method: "POST", body: form });
     },
+    // Accepts a JSON or YAML list of {question, answer}.
     importText: (collectionID: string, text: string) => {
       const form = new FormData();
-      form.append("file", new Blob([text], { type: "text/csv" }), "import.csv");
-      return request<{ imported: number }>(`/collections/${collectionID}/cards/import`, { method: "POST", body: form });
+      form.append("file", new Blob([text], { type: "text/plain" }), "import.txt");
+      return request<{ imported: number; skipped: number }>(`/collections/${collectionID}/cards/import`, { method: "POST", body: form });
     },
   },
   tests: {
@@ -274,10 +261,11 @@ export const api = {
       request<TestQuestion>(`/collections/${collectionID}/tests/${tqID}`, { method: "PUT", body: JSON.stringify({ question, options, position }) }),
     delete: (collectionID: string, tqID: string) =>
       request<void>(`/collections/${collectionID}/tests/${tqID}`, { method: "DELETE" }),
+    // Accepts a JSON or YAML list of {question, options:[{text, correct}]}.
     importText: (collectionID: string, text: string) => {
       const form = new FormData();
-      form.append("file", new Blob([text], { type: "text/csv" }), "import.csv");
-      return request<{ imported: number }>(`/collections/${collectionID}/tests/import`, { method: "POST", body: form });
+      form.append("file", new Blob([text], { type: "text/plain" }), "import.txt");
+      return request<{ imported: number; skipped: number }>(`/collections/${collectionID}/tests/import`, { method: "POST", body: form });
     },
   },
   exercises: {

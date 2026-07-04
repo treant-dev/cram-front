@@ -17,46 +17,33 @@ const btnBase = "text-sm px-3 py-1.5 rounded-lg border transition-colors disable
 
 // ── Import panel ─────────────────────────────────────────────────────────────
 
-type ParsedRow = { term: string; definition: string };
-type ParseError = { line: number; text: string; message: string };
+const exampleCardYAML = `- question: What is a goroutine?
+  answer: A lightweight thread managed by Go
+- question: What does defer do?
+  answer: Runs a function when the surrounding function returns`;
 
-function parseCSV(text: string): { rows: ParsedRow[]; errors: ParseError[] } {
-  const rows: ParsedRow[] = [];
-  const errors: ParseError[] = [];
-  text.split("\n").forEach((raw, i) => {
-    const line = raw.trim();
-    if (!line) return;
-    const parts = line.split(";");
-    if (parts.length !== 2) {
-      errors.push({ line: i + 1, text: line, message: `expected 2 columns, got ${parts.length}` });
-      return;
-    }
-    const term = parts[0].trim();
-    const definition = parts[1].trim();
-    if (!term || !definition) {
-      errors.push({ line: i + 1, text: line, message: !term ? "term is empty" : "definition is empty" });
-      return;
-    }
-    rows.push({ term, definition });
-  });
-  return { rows, errors };
-}
-
-function ImportPanel({ collectionID, onDone, onCancel }: {
+function ImportPanel({ collectionID, onImported, onCancel }: {
   collectionID: string;
-  onDone: (count: number) => void;
+  onImported: () => void; // reload cards (panel stays open to show the result)
   onCancel: () => void;
 }) {
   const [text, setText] = useState("");
   const [importing, setImporting] = useState(false);
-  const { rows, errors } = parseCSV(text);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<{ imported: number; skipped: number } | null>(null);
+  const canImport = !!text.trim();
 
   async function doImport() {
-    if (rows.length === 0 || errors.length > 0) return;
+    if (!canImport) return;
     setImporting(true);
+    setError(null);
     try {
-      const { imported } = await api.cards.importText(collectionID, text);
-      onDone(imported);
+      const res = await api.cards.importText(collectionID, text);
+      setResult(res);
+      setText("");
+      onImported();
+    } catch {
+      setError("Import failed — must be a JSON or YAML list of { question, answer }.");
     } finally {
       setImporting(false);
     }
@@ -64,52 +51,35 @@ function ImportPanel({ collectionID, onDone, onCancel }: {
 
   return (
     <div className={formCls}>
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2">
         <p className="text-sm font-medium text-gray-700 dark:text-slate-300">Import cards</p>
-        <p className="text-xs text-gray-400 dark:text-slate-500">One card per line: <code className="bg-gray-100 dark:bg-slate-800 px-1 rounded">term;definition</code></p>
+        <p className="text-xs text-gray-400 dark:text-slate-500">JSON or YAML list of <code className="bg-gray-100 dark:bg-slate-800 px-1 rounded">{"{ question, answer }"}</code></p>
       </div>
 
       <textarea
         className={inputCls + " min-h-[120px] resize-y font-mono text-xs"}
-        placeholder={"What is a goroutine?;A lightweight thread managed by Go\nWhat does defer do?;Runs a function when the surrounding function returns"}
+        placeholder={exampleCardYAML}
         value={text}
-        onChange={(e) => setText(e.target.value)}
+        onChange={(e) => { setText(e.target.value); setResult(null); }}
         autoFocus
       />
 
-      {errors.length > 0 && (
-        <div className="flex flex-col gap-1">
-          {errors.map((e) => (
-            <p key={e.line} className="text-xs text-red-500 dark:text-red-400">
-              Line {e.line}: {e.message} — <span className="font-mono">{e.text.slice(0, 60)}{e.text.length > 60 ? "…" : ""}</span>
-            </p>
-          ))}
-        </div>
-      )}
-
-      {rows.length > 0 && errors.length === 0 && (
-        <div className="flex flex-col gap-1">
-          <p className="text-xs text-gray-400 dark:text-slate-500 font-medium">Preview — {rows.length} card{rows.length !== 1 ? "s" : ""}</p>
-          <div className="max-h-48 overflow-y-auto flex flex-col gap-1">
-            {rows.map((r, i) => (
-              <div key={i} className="flex items-center gap-2 text-xs bg-gray-50 dark:bg-slate-800 rounded px-3 py-1.5">
-                <span className="text-gray-900 dark:text-slate-100 font-bold truncate flex-1">{r.term}</span>
-                <span className="text-gray-400 dark:text-slate-600 shrink-0">-</span>
-                <span className="text-gray-600 dark:text-slate-400 truncate flex-1">{r.definition}</span>
-              </div>
-            ))}
-          </div>
-        </div>
+      {error && <p className="text-xs text-red-500 dark:text-red-400">{error}</p>}
+      {result && (
+        <p className="text-xs font-medium text-green-600 dark:text-green-400">
+          ✓ Imported {result.imported} card{result.imported !== 1 ? "s" : ""}
+          {result.skipped > 0 && <span className="text-amber-600 dark:text-amber-400"> · {result.skipped} skipped (invalid)</span>}
+        </p>
       )}
 
       <div className="flex gap-2 justify-end">
-        <button type="button" onClick={onCancel} className="text-sm text-gray-500 dark:text-slate-400 px-3 py-1 hover:text-gray-700 dark:hover:text-slate-200">Cancel</button>
+        <button type="button" onClick={onCancel} className="text-sm text-gray-500 dark:text-slate-400 px-3 py-1 hover:text-gray-700 dark:hover:text-slate-200">{result ? "Done" : "Cancel"}</button>
         <button
           onClick={doImport}
-          disabled={importing || rows.length === 0 || errors.length > 0}
+          disabled={importing || !canImport}
           className="bg-indigo-600 text-white px-4 py-1.5 rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50"
         >
-          {importing ? "Importing…" : `Import${rows.length > 0 ? ` ${rows.length} card${rows.length !== 1 ? "s" : ""}` : ""}`}
+          {importing ? "Importing…" : "Import"}
         </button>
       </div>
     </div>
@@ -118,63 +88,34 @@ function ImportPanel({ collectionID, onDone, onCancel }: {
 
 // ── Import test panel ─────────────────────────────────────────────────────────
 
-type ParsedTest = { question: string; options: { text: string; isCorrect: boolean }[] };
-type TestParseError = { line: number; text: string; message: string };
+const exampleTestYAML = `- question: What is Go?
+  options:
+    - { text: A compiled language, correct: true }
+    - { text: A scripting language }
+    - { text: A markup language }`;
 
-function parseTestCSV(raw: string): { rows: ParsedTest[]; errors: TestParseError[] } {
-  const rows: ParsedTest[] = [];
-  const errors: TestParseError[] = [];
-  raw.split("\n").forEach((line, i) => {
-    const trimmed = line.trim();
-    if (!trimmed) return;
-    const parts = trimmed.split(";");
-    if (parts.length < 5) {
-      errors.push({ line: i + 1, text: trimmed, message: "need at least 5 columns (question;is_correct;answer;is_correct;answer)" });
-      return;
-    }
-    if ((parts.length - 1) % 2 !== 0) {
-      errors.push({ line: i + 1, text: trimmed, message: "options must come in pairs (is_correct;answer)" });
-      return;
-    }
-    const question = parts[0].trim();
-    if (!question) {
-      errors.push({ line: i + 1, text: trimmed, message: "question is empty" });
-      return;
-    }
-    const options: { text: string; isCorrect: boolean }[] = [];
-    for (let j = 1; j + 1 < parts.length; j += 2) {
-      const flag = parts[j].trim().toLowerCase();
-      const text = parts[j + 1].trim();
-      if (!text) {
-        errors.push({ line: i + 1, text: trimmed, message: `option ${Math.floor(j / 2) + 1} text is empty` });
-        return;
-      }
-      options.push({ text, isCorrect: flag === "1" || flag === "t" || flag === "true" });
-    }
-    if (!options.some((o) => o.isCorrect)) {
-      errors.push({ line: i + 1, text: trimmed, message: "no correct answer marked (use 1 or t)" });
-      return;
-    }
-    rows.push({ question, options });
-  });
-  return { rows, errors };
-}
-
-function ImportTestPanel({ collectionID, onDone, onCancel }: {
+function ImportTestPanel({ collectionID, onImported, onCancel }: {
   collectionID: string;
-  onDone: () => void;
+  onImported: () => void; // reload questions (panel stays open to show the result)
   onCancel: () => void;
 }) {
   const [text, setText] = useState("");
   const [importing, setImporting] = useState(false);
-  const { rows, errors } = parseTestCSV(text);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<{ imported: number; skipped: number } | null>(null);
+  const canImport = !!text.trim();
 
   async function doImport() {
-    if (rows.length === 0 || errors.length > 0) return;
+    if (!canImport) return;
     setImporting(true);
+    setError(null);
     try {
-      await api.tests.importText(collectionID, text);
-      onDone();
+      const res = await api.tests.importText(collectionID, text);
+      setResult(res);
+      setText("");
+      onImported();
+    } catch {
+      setError("Import failed — must be a JSON or YAML list of { question, options }.");
     } finally {
       setImporting(false);
     }
@@ -182,59 +123,35 @@ function ImportTestPanel({ collectionID, onDone, onCancel }: {
 
   return (
     <div className={formCls}>
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2">
         <p className="text-sm font-medium text-gray-700 dark:text-slate-300">Import test questions</p>
-        <p className="text-xs text-gray-400 dark:text-slate-500">
-          <code className="bg-gray-100 dark:bg-slate-800 px-1 rounded">question;0/1;option;0/1;option;…</code>
-        </p>
+        <p className="text-xs text-gray-400 dark:text-slate-500">JSON or YAML list of <code className="bg-gray-100 dark:bg-slate-800 px-1 rounded">{"{ question, options }"}</code></p>
       </div>
 
       <textarea
         className={inputCls + " min-h-[120px] resize-y font-mono text-xs"}
-        placeholder={"What is Go?;1;A compiled language;0;A scripting language;0;A markup language\nWhat does defer do?;0;Starts goroutine;1;Runs when function returns;0;Allocates memory"}
+        placeholder={exampleTestYAML}
         value={text}
-        onChange={(e) => setText(e.target.value)}
+        onChange={(e) => { setText(e.target.value); setResult(null); }}
         autoFocus
       />
 
-      {errors.length > 0 && (
-        <div className="flex flex-col gap-1">
-          {errors.map((e) => (
-            <p key={e.line} className="text-xs text-red-500 dark:text-red-400">
-              Line {e.line}: {e.message} — <span className="font-mono">{e.text.slice(0, 60)}{e.text.length > 60 ? "…" : ""}</span>
-            </p>
-          ))}
-        </div>
-      )}
-
-      {rows.length > 0 && errors.length === 0 && (
-        <div className="flex flex-col gap-1">
-          <p className="text-xs text-gray-400 dark:text-slate-500 font-medium">Preview — {rows.length} question{rows.length !== 1 ? "s" : ""}</p>
-          <div className="max-h-48 overflow-y-auto flex flex-col gap-2">
-            {rows.map((r, i) => (
-              <div key={i} className="text-xs bg-gray-50 dark:bg-slate-800 rounded px-3 py-2">
-                <p className="font-medium text-gray-900 dark:text-slate-100 mb-1">{r.question}</p>
-                <div className="flex flex-wrap gap-1">
-                  {r.options.map((o, j) => (
-                    <span key={j} className={`px-2 py-0.5 rounded ${o.isCorrect ? "bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400" : "bg-gray-100 dark:bg-slate-700 text-gray-500 dark:text-slate-400"}`}>
-                      {o.text}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+      {error && <p className="text-xs text-red-500 dark:text-red-400">{error}</p>}
+      {result && (
+        <p className="text-xs font-medium text-green-600 dark:text-green-400">
+          ✓ Imported {result.imported} question{result.imported !== 1 ? "s" : ""}
+          {result.skipped > 0 && <span className="text-amber-600 dark:text-amber-400"> · {result.skipped} skipped (invalid)</span>}
+        </p>
       )}
 
       <div className="flex gap-2 justify-end">
-        <button type="button" onClick={onCancel} className="text-sm text-gray-500 dark:text-slate-400 px-3 py-1 hover:text-gray-700 dark:hover:text-slate-200">Cancel</button>
+        <button type="button" onClick={onCancel} className="text-sm text-gray-500 dark:text-slate-400 px-3 py-1 hover:text-gray-700 dark:hover:text-slate-200">{result ? "Done" : "Cancel"}</button>
         <button
           onClick={doImport}
-          disabled={importing || rows.length === 0 || errors.length > 0}
+          disabled={importing || !canImport}
           className="bg-indigo-600 text-white px-4 py-1.5 rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50"
         >
-          {importing ? "Importing…" : `Import${rows.length > 0 ? ` ${rows.length} question${rows.length !== 1 ? "s" : ""}` : ""}`}
+          {importing ? "Importing…" : "Import"}
         </button>
       </div>
     </div>
@@ -328,48 +245,34 @@ function ExerciseImportPanel({ collectionID, onImported, onCancel }: {
 
 // Manage panel: list exercises with a delete button each (append-only import, this is how
 // you remove items). Direct delete on the published collection — no draft flow.
-function ExerciseManagePanel({ collectionID, exercises, onChanged, onClose }: {
+// Edit-mode exercises list: reset the user's answers or delete each exercise.
+function ExerciseEditList({ collectionID, exercises, onChanged }: {
   collectionID: string;
   exercises: Exercise[];
   onChanged: () => void;
-  onClose: () => void;
 }) {
-  const [deleting, setDeleting] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
 
-  async function del(exID: string) {
-    setDeleting(exID);
-    try {
-      await api.exercises.delete(collectionID, exID);
-      onChanged();
-    } finally {
-      setDeleting(null);
-    }
+  async function run(exID: string, fn: () => Promise<void>) {
+    setBusy(exID);
+    try { await fn(); onChanged(); } finally { setBusy(null); }
   }
 
   return (
-    <div className={formCls}>
-      <div className="flex items-center justify-between">
-        <p className="text-sm font-medium text-gray-700 dark:text-slate-300">Edit exercises</p>
-        <button type="button" onClick={onClose} className="text-sm text-gray-500 dark:text-slate-400 px-2 hover:text-gray-700 dark:hover:text-slate-200">Done</button>
-      </div>
-      {exercises.length === 0 ? (
-        <p className="text-sm text-gray-400 dark:text-slate-500">No exercises.</p>
-      ) : (
-        <ul className="flex flex-col gap-2">
-          {exercises.map((ex) => (
-            <li key={ex.ID} className="flex items-center gap-3 bg-gray-50 dark:bg-slate-800 rounded-lg px-3 py-2">
-              <span className="text-xs px-2 py-0.5 rounded-full bg-gray-200 dark:bg-slate-700 text-gray-500 dark:text-slate-400 capitalize shrink-0">{ex.Kind}</span>
-              <span className="text-sm text-gray-700 dark:text-slate-300 truncate flex-1 min-w-0">
-                {ex.Title || `${ex.Sentences?.length ?? 0} sentence${(ex.Sentences?.length ?? 0) !== 1 ? "s" : ""}`}
-              </span>
-              <button type="button" onClick={() => del(ex.ID)} disabled={deleting === ex.ID} className="text-sm text-red-500 hover:text-red-600 dark:hover:text-red-300 shrink-0 disabled:opacity-50">
-                {deleting === ex.ID ? "…" : "Delete"}
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
+    <ul className="flex flex-col gap-2">
+      {exercises.map((ex) => (
+        <li key={ex.ID} className="flex items-center gap-3 bg-gray-50 dark:bg-slate-800 rounded-lg px-3 py-2">
+          <span className="text-xs px-2 py-0.5 rounded-full bg-gray-200 dark:bg-slate-700 text-gray-500 dark:text-slate-400 capitalize shrink-0">{ex.Kind}</span>
+          <span className="text-sm text-gray-700 dark:text-slate-300 truncate flex-1 min-w-0">
+            {ex.Title || (ex.Kind === "quiz" ? ex.Question : `${ex.Sentences?.length ?? 0} sentence${(ex.Sentences?.length ?? 0) !== 1 ? "s" : ""}`)}
+          </span>
+          <button type="button" onClick={() => run(ex.ID, () => api.exercises.resetExercise(collectionID, ex.ID))} disabled={busy === ex.ID} className="text-sm text-gray-500 hover:text-gray-700 dark:text-slate-400 dark:hover:text-slate-200 shrink-0 disabled:opacity-50">Reset</button>
+          <button type="button" onClick={() => run(ex.ID, () => api.exercises.delete(collectionID, ex.ID))} disabled={busy === ex.ID} className="text-sm text-red-500 hover:text-red-600 dark:hover:text-red-300 shrink-0 disabled:opacity-50">
+            {busy === ex.ID ? "…" : "Delete"}
+          </button>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -530,18 +433,16 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
   const [editingTest, setEditingTest] = useState<TestQuestion | null>(null);
   const [showCardForm, setShowCardForm] = useState(false);
   const [showTestForm, setShowTestForm] = useState(false);
-  const [showQuickAdd, setShowQuickAdd] = useState(false);
+  const [quickAdd, setQuickAdd] = useState<"card" | "test" | "exercise" | null>(null);
+  const [savedResults, setSavedResults] = useState<Record<string, string[]> | null>(null);
   const [showImport, setShowImport] = useState(false);
   const [showImportTest, setShowImportTest] = useState(false);
-  const [showImportEx, setShowImportEx] = useState(false);
-  const [showManageEx, setShowManageEx] = useState(false);
   const [saving, setSaving] = useState(false);
   const [shareToken, setShareToken] = useState<string | null>(null);
   const [shareLoading, setShareLoading] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
   const [itemProgress, setItemProgress] = useState<Record<string, ProgressEntry>>({});
   // sentenceID -> previously submitted words; null until loaded (gates worksheet render)
-  const [savedResults, setSavedResults] = useState<Record<string, string[]> | null>(null);
   const [isFollowed, setIsFollowed] = useState(false);
   const [followLoading, setFollowLoading] = useState(false);
 
@@ -567,8 +468,9 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
           setItemProgress(merged);
         }).catch(() => {});
       }
-      // Restore saved exercise answers (only for exercises collections).
-      if (col.Type === "exercises" && loggedIn) {
+      // Load saved exercise answers BEFORE rendering the read-only worksheet, so the
+      // blocks restore them (their state is seeded once from `saved` on mount).
+      if ((col.Exercises?.length ?? 0) > 0 && loggedIn) {
         api.exercises.getResults(col.ID).then((res) => {
           const m: Record<string, string[]> = {};
           for (const [sid, e] of Object.entries(res)) m[sid] = e.submitted;
@@ -746,14 +648,14 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
   async function quickAddCard(term: string, definition: string, image: string) {
     if (!collection) return;
     await api.cards.add(collection.ID, term, definition, image, (collection.Cards ?? []).length);
-    setShowQuickAdd(false);
+    setQuickAdd(null);
     setCollection(await api.collections.get(collection.ID));
   }
 
   async function quickAddTest(question: string, options: TestAnswer[], image: string) {
     if (!collection) return;
     await api.tests.add(collection.ID, question, options, image, (collection.TestQuestions ?? []).length);
-    setShowQuickAdd(false);
+    setQuickAdd(null);
     setCollection(await api.collections.get(collection.ID));
   }
 
@@ -854,18 +756,13 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
   // In view mode show active collection content; in edit mode show draft content.
   const cards = editMode ? editCards : (collection.Cards ?? []);
   const tests = editMode ? editTests : (collection.TestQuestions ?? []);
-  const isExercises = collection.Type === "exercises";
-  const isCards = collection.Type === "cards";
-  const isTests = collection.Type === "tests";
   const exercises = collection.Exercises ?? [];
-  const typeLabel = isExercises ? "Exercises" : isTests ? "Tests" : "Cards";
-  const itemCount = isExercises ? exercises.length : isTests ? tests.length : cards.length;
-  const hasFlip = isCards && cards.length >= 2;          // flip-card mode needs ≥2 cards
-  const hasTest = isTests && tests.length >= 1;          // multiple-choice test (tests collections only)
-  const hasBlitz = (isCards ? cards.length : tests.length) >= 1;
-  const allItemKeys = isCards
-    ? cards.map((c) => `card:${c.ID}`)
-    : tests.map((t) => `tq:${t.ID}`);
+  // Mixed collections: capability by content presence, not a single collection type.
+  const hasExercises = exercises.length > 0;
+  const itemCount = cards.length + tests.length + exercises.length;
+  const hasFlip = cards.length >= 2;               // flip-card mode needs ≥2 cards
+  const hasBlitz = cards.length >= 1;              // blitz is cards-only
+  const allItemKeys = cards.map((c) => `card:${c.ID}`); // progress is card-only
   const allMastered = allItemKeys.length > 0 && allItemKeys.every((k) => itemProgress[k]?.level === 7);
   const now = new Date();
   const dueCount = allItemKeys.filter((k) => {
@@ -922,7 +819,7 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
         ) : (
           <div className="mb-4">
             <div className="flex items-center gap-2 mb-1">
-              <h1 className="text-2xl font-bold text-gray-900 dark:text-slate-100">{typeLabel} ({itemCount}): {collection.Title}</h1>
+              <h1 className="text-2xl font-bold text-gray-900 dark:text-slate-100">{collection.Title} ({itemCount})</h1>
               <span className={`text-xs font-medium px-2 py-0.5 rounded-full border ${
                 collection.IsPublic
                   ? "bg-green-50 dark:bg-green-900/20 border-green-300 dark:border-green-700 text-green-700 dark:text-green-400"
@@ -935,33 +832,8 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
           </div>
         )}
 
-        {/* Exercises worksheet — entering the collection is the interactive sheet itself */}
-        {isExercises && !editMode && (
-          <div className="mb-8">
-            {exercises.length === 0 ? (
-              <div className="flex flex-col items-center gap-4 py-10 text-center">
-                <p className="text-sm text-gray-400 dark:text-slate-500">No exercises yet.</p>
-                {isOwner && (
-                  <>
-                    <p className="text-sm text-gray-500 dark:text-slate-400 max-w-sm">
-                      Generate exercises with an AI: download the format guide, paste it into ChatGPT/Claude with your topic, then <span className="font-medium">Import YAML</span> in settings below.
-                    </p>
-                    <a
-                      href="/exercises-format.md"
-                      download="cram-exercises-format.md"
-                      className="px-4 py-2 rounded-lg text-sm font-medium border border-indigo-300 dark:border-indigo-700 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-colors"
-                    >
-                      ↓ Download AI format guide
-                    </a>
-                  </>
-                )}
-              </div>
-            ) : savedResults !== null && <ExerciseWorksheet exercises={exercises} collectionID={collection.ID} saved={savedResults} />}
-          </div>
-        )}
-
         {/* Study mode buttons + quick-add */}
-        {!isExercises && !editMode && (hasBlitz || isOwner || currentUserID !== null) && (
+        {!editMode && (hasBlitz || isOwner || currentUserID !== null) && (
           <div className="flex gap-3 mb-8 flex-wrap items-center">
             {hasBlitz && currentUserID !== null && (
               allMastered ? (
@@ -972,11 +844,11 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
                 </Link>
               )
             )}
-            {hasTest && (
-              <Link href={`/collections/${collection.ID}/test`} className="bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors">Test</Link>
-            )}
             {hasFlip && (
               <Link href={`/collections/${collection.ID}/cards`} className="bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors">Cards</Link>
+            )}
+            {hasExercises && (
+              <Link href={`/collections/${collection.ID}/exercises`} className="bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors">Exercise</Link>
             )}
             {currentUserID !== null && !isOwner && (
               <button
@@ -992,29 +864,42 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
               </button>
             )}
             {isOwner && (
-              <button
-                onClick={() => setShowQuickAdd((v) => !v)}
-                className="ml-auto px-4 py-2 rounded-lg text-sm font-medium border border-indigo-300 dark:border-indigo-700 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-colors"
-              >
-                + Add {isCards ? "card" : "question"}
-              </button>
+              <div className="ml-auto flex gap-2">
+                {(["card", "test", "exercise"] as const).map((kind) => (
+                  <button
+                    key={kind}
+                    onClick={() => setQuickAdd((v) => (v === kind ? null : kind))}
+                    className="px-4 py-2 rounded-lg text-sm font-medium border border-indigo-300 dark:border-indigo-700 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-colors capitalize"
+                  >
+                    + {kind}
+                  </button>
+                ))}
+              </div>
             )}
           </div>
         )}
 
         {/* Quick-add form (view mode, owner) — add one item without entering edit mode */}
-        {!editMode && isOwner && showQuickAdd && (
+        {!editMode && isOwner && quickAdd && (
           <div className="mb-6">
-            {isCards ? (
-              <CardForm onSave={quickAddCard} onCancel={() => setShowQuickAdd(false)} userRole={currentUserRole} />
-            ) : (
-              <TestForm onSave={quickAddTest} onCancel={() => setShowQuickAdd(false)} />
+            {quickAdd === "card" && (
+              <CardForm onSave={quickAddCard} onCancel={() => setQuickAdd(null)} userRole={currentUserRole} />
+            )}
+            {quickAdd === "test" && (
+              <TestForm onSave={quickAddTest} onCancel={() => setQuickAdd(null)} />
+            )}
+            {quickAdd === "exercise" && (
+              <ExerciseImportPanel
+                collectionID={collection.ID}
+                onImported={async () => { setCollection(await api.collections.get(collection.ID)); }}
+                onCancel={() => setQuickAdd(null)}
+              />
             )}
           </div>
         )}
 
         {/* ── Cards section ── */}
-        {isCards && (editMode || cards.length > 0) && (
+        {(cards.length > 0 || editMode) && (
           <div className="mb-8">
             {editMode && (
               <div className="flex items-center justify-between mb-3">
@@ -1032,8 +917,7 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
               <ImportPanel
                 collectionID={draftCollectionID}
                 onCancel={() => setShowImport(false)}
-                onDone={() => {
-                  setShowImport(false);
+                onImported={() => {
                   api.drafts.getOrCreate(collection.ID).then((draft) => setEditCards(draft.Cards ?? []));
                 }}
               />
@@ -1076,7 +960,7 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
         )}
 
         {/* ── Test questions section ── */}
-        {isTests && (editMode || tests.length > 0) && (
+        {(tests.length > 0 || editMode) && (
           <div className="mb-8">
             {editMode && (
               <div className="flex items-center justify-between mb-3">
@@ -1094,8 +978,7 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
               <ImportTestPanel
                 collectionID={draftCollectionID}
                 onCancel={() => setShowImportTest(false)}
-                onDone={() => {
-                  setShowImportTest(false);
+                onImported={() => {
                   api.drafts.getOrCreate(collection.ID).then((draft) => setEditTests(draft.TestQuestions ?? []));
                 }}
               />
@@ -1141,12 +1024,26 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
           </div>
         )}
 
+        {/* ── Exercises (read-only review: shows your answers if any; run via "Exercise") ── */}
+        {hasExercises && !editMode && savedResults !== null && (
+          <div className="mb-8">
+            <h2 className="text-sm font-semibold text-gray-500 dark:text-slate-400 mb-3">Exercises ({exercises.length})</h2>
+            <ExerciseWorksheet exercises={exercises} collectionID={collection.ID} saved={savedResults} readOnly />
+          </div>
+        )}
+        {hasExercises && editMode && (
+          <div className="mb-8">
+            <h2 className="text-sm font-semibold text-gray-500 dark:text-slate-400 mb-3">Exercises ({exercises.length})</h2>
+            <ExerciseEditList collectionID={collection.ID} exercises={exercises} onChanged={async () => { setCollection(await api.collections.get(collection.ID)); }} />
+          </div>
+        )}
+
         {/* ── Owner actions (view mode only) ── */}
         {!editMode && isOwner && (
           <div className="border-t border-gray-100 dark:border-slate-800 pt-6 mt-2 flex flex-col gap-3">
             <div className="flex flex-wrap gap-2">
-              {/* Exercises have no draft editor (yet) — they're edited via YAML import above. */}
-              {!isExercises && (hasDraft ? (
+              {/* Cards/tests draft editor — available on any collection */}
+              {hasDraft ? (
                 <>
                   <button onClick={enterEditMode} disabled={saving} className={`${btnBase} border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/40`}>
                     Continue editing
@@ -1159,16 +1056,6 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
                 <button onClick={enterEditMode} disabled={saving} className={`${btnBase} border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700`}>
                   {saving ? "Loading…" : "Edit"}
                 </button>
-              ))}
-              {isExercises && (
-                <button onClick={() => { setShowManageEx(false); setShowImportEx((v) => !v); }} className={`${btnBase} border-indigo-300 dark:border-indigo-700 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/40`}>
-                  + Import YAML
-                </button>
-              )}
-              {isExercises && exercises.length > 0 && (
-                <button onClick={() => { setShowImportEx(false); setShowManageEx((v) => !v); }} className={`${btnBase} border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700`}>
-                  Edit
-                </button>
               )}
               <button onClick={togglePublic} className={`${btnBase} border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700`}>
                 {collection.IsPublic ? "Make private" : "Make public"}
@@ -1177,22 +1064,6 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
                 Delete
               </button>
             </div>
-
-            {isExercises && showImportEx && (
-              <ExerciseImportPanel
-                collectionID={collection.ID}
-                onCancel={() => setShowImportEx(false)}
-                onImported={async () => { setCollection(await api.collections.get(collection.ID)); }}
-              />
-            )}
-            {isExercises && showManageEx && (
-              <ExerciseManagePanel
-                collectionID={collection.ID}
-                exercises={exercises}
-                onChanged={async () => { setCollection(await api.collections.get(collection.ID)); }}
-                onClose={() => setShowManageEx(false)}
-              />
-            )}
 
             {/* Share link — its own block: a Share button that becomes Revoke once a link exists.
                 Right-anchored so the button stays put when the link field appears. */}
