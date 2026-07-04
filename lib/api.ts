@@ -21,17 +21,12 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return res.json();
 }
 
-export type CollectionType = "cards" | "tests" | "exercises";
-
 export type Collection = {
   ID: string;
   UserID: string;
   Title: string;
   Description: string;
-  Type: CollectionType;
   IsPublic: boolean;
-  IsDraft: boolean;
-  DraftOf: string | null;
   DraftID: string | null; // populated for owners when a draft exists
   ShareToken: string | null;
   Cards: Card[] | null;
@@ -177,8 +172,8 @@ export const api = {
     listPublic: () => request<PublicCollection[]>("/public/collections"),
     get: (id: string) => request<Collection>(`/collections/${id}`),
     getPublic: (id: string) => request<Collection>(`/public/collections/${id}`),
-    create: (title: string, description: string, type: CollectionType = "cards", isPublic = false) =>
-      request<Collection>("/collections", { method: "POST", body: JSON.stringify({ title, description, type, is_public: isPublic }) }),
+    create: (title: string, description: string, isPublic = false) =>
+      request<Collection>("/collections", { method: "POST", body: JSON.stringify({ title, description, is_public: isPublic }) }),
     update: (id: string, title: string, description: string, isPublic: boolean) =>
       request<Collection>(`/collections/${id}`, { method: "PUT", body: JSON.stringify({ title, description, is_public: isPublic }) }),
     delete: (id: string) => request<void>(`/collections/${id}`, { method: "DELETE" }),

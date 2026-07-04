@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { api, Collection, CollectionType } from "@/lib/api";
+import { api, Collection } from "@/lib/api";
 import { isLoggedIn } from "@/lib/auth";
 import Navbar from "@/components/Navbar";
 
@@ -19,9 +19,6 @@ function CollectionItem({ c }: { c: Collection }) {
           {c.Description && <p className="text-sm text-gray-500 dark:text-slate-400 mt-0.5">{c.Description}</p>}
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
-          <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400">
-            {c.Type === "exercises" ? "Exercises" : c.Type === "tests" ? "Tests" : "Cards"}
-          </span>
           <span className={`text-xs px-2 py-0.5 rounded-full ${c.IsPublic ? "bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400" : "bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400"}`}>
             {c.IsPublic ? "Public" : "Private"}
           </span>
@@ -40,7 +37,6 @@ export default function HomePage() {
   const [showForm, setShowForm] = useState(false);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [type, setType] = useState<CollectionType>("cards");
 
   useEffect(() => {
     if (!isLoggedIn()) { router.replace("/"); return; }
@@ -53,10 +49,10 @@ export default function HomePage() {
   async function createCollection(e: React.FormEvent) {
     e.preventDefault();
     if (!title.trim()) return;
-    const col = await api.collections.create(title.trim(), description.trim(), type);
-    // Exercises are import-only (no draft editor); land on the collection where the
-    // owner can import YAML. Cards/tests open straight into the draft editor.
-    router.push(type === "exercises" ? `/collections/${col.ID}` : `/collections/${col.ID}?edit=1`);
+    const col = await api.collections.create(title.trim(), description.trim());
+    // Collections are mixed — land in edit mode where the owner can add cards,
+    // tests, or exercises.
+    router.push(`/collections/${col.ID}?edit=1`);
   }
 
   const skeleton = (
@@ -84,26 +80,6 @@ export default function HomePage() {
 
           {showForm && (
             <form onSubmit={createCollection} className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl p-5 mb-4 flex flex-col gap-3">
-              <div className="flex gap-2">
-                {([
-                  { v: "cards", label: "Flashcards" },
-                  { v: "tests", label: "Test questions" },
-                  { v: "exercises", label: "Exercises" },
-                ] as const).map((opt) => (
-                  <button
-                    key={opt.v}
-                    type="button"
-                    onClick={() => setType(opt.v)}
-                    className={`flex-1 text-sm font-medium px-3 py-2 rounded-lg border transition-colors ${
-                      type === opt.v
-                        ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300"
-                        : "border-gray-300 dark:border-slate-600 text-gray-600 dark:text-slate-400 hover:border-indigo-400"
-                    }`}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
               <input
                 className="border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 placeholder:text-gray-400 dark:placeholder:text-slate-500"
                 placeholder="Title"
