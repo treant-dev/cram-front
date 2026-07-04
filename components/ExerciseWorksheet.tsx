@@ -1,17 +1,21 @@
 "use client";
 
-import { useRef, useState, type TouchEvent as ReactTouchEvent } from "react";
-import { Exercise, api } from "@/lib/api";
+import { useEffect, useRef, useState, type TouchEvent as ReactTouchEvent } from "react";
+import { Exercise, BankExercise, ChoiceExercise, QuizExercise, api } from "@/lib/api";
 import { segments, isCorrect, bankPool, gapOptions } from "@/lib/exercises";
+import OptionButton from "@/components/OptionButton";
 
 type SentenceResult = { id: string; correct: boolean; submitted: string[] };
 type Nav = { isFirst: boolean; isLast: boolean; onPrev: () => void; onNext: () => void };
-type BlockProps = {
-  ex: Exercise;
+type BlockProps<E extends Exercise> = {
+  ex: E;
   saved: Record<string, string[]>; // sentenceId -> submitted words; restores the answered state
   onCheck: (results: SentenceResult[]) => void;
   onReset: () => void;
   nav: Nav;
+  single?: boolean;   // stepper layout (prev/next) on all screens
+  active?: boolean;   // this block is the currently-shown one (for keyboard shortcuts)
+  readOnly?: boolean; // review display: no actions, no interaction
 };
 
 function shuffle<T>(arr: T[]): T[] {
@@ -39,6 +43,7 @@ const navBtn =
 const kindBadge: Record<string, string> = {
   bank: "bg-indigo-100 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-400",
   choice: "bg-purple-100 text-purple-600 dark:bg-purple-900/40 dark:text-purple-400",
+  quiz: "bg-emerald-100 text-emerald-600 dark:bg-emerald-900/40 dark:text-emerald-400",
 };
 
 // A blank slot — shared by bank and choice so both look identical.
@@ -57,12 +62,13 @@ function slotColor(state: "empty" | "filled" | "correct" | "wrong"): string {
 //     their role (right = forward action, centre = secondary), so nothing jumps.
 //   Desktop (all blocks visible, no nav): a single centred action that swaps Confirm↔Reset
 //     in place — a lone button reads best centred (no left hint to balance it like blitz).
-function BlockActions({ checked, onConfirm, onReset, nav }: {
-  checked: boolean; onConfirm: () => void; onReset: () => void; nav: Nav;
+function BlockActions({ checked, onConfirm, onReset, nav, single }: {
+  checked: boolean; onConfirm: () => void; onReset: () => void; nav: Nav; single?: boolean;
 }) {
   return (
     <>
-      <div className="grid grid-cols-3 items-center mt-3 sm:hidden">
+      {/* stepper (prev · skip/reset · confirm/next): always in single mode, else mobile-only */}
+      <div className={`grid grid-cols-3 items-center mt-3 ${single ? "" : "sm:hidden"}`}>
         <div className="justify-self-start">
           {!nav.isFirst && <button type="button" onClick={nav.onPrev} className={navBtn}>← Prev</button>}
         </div>
@@ -77,11 +83,13 @@ function BlockActions({ checked, onConfirm, onReset, nav }: {
             : <button type="button" onClick={onConfirm} className={confirmBtn}>Confirm</button>}
         </div>
       </div>
-      <div className="hidden sm:flex justify-center mt-3">
-        {checked
-          ? <button type="button" onClick={onReset} className={resetBtn}>Reset</button>
-          : <button type="button" onClick={onConfirm} className={confirmBtn}>Confirm</button>}
-      </div>
+      {!single && (
+        <div className="hidden sm:flex justify-center mt-3">
+          {checked
+            ? <button type="button" onClick={onReset} className={resetBtn}>Reset</button>
+            : <button type="button" onClick={onConfirm} className={confirmBtn}>Confirm</button>}
+        </div>
+      )}
     </>
   );
 }
@@ -89,7 +97,7 @@ function BlockActions({ checked, onConfirm, onReset, nav }: {
 // ── bank: shared shuffled word pool, drag-and-drop (or tap) into blanks ────────
 type PoolWord = { id: string; word: string };
 
-function BankBlock({ ex, saved, onCheck, onReset, nav }: BlockProps) {
+function BankBlock({ ex, saved, onCheck, onReset, nav, single, readOnly }: BlockProps<BankExercise>) {
   const [poolWords] = useState<PoolWord[]>(() =>
     shuffle(bankPool(ex).map((word, i) => ({ id: `p${i}`, word })))
   );
@@ -121,7 +129,7 @@ function BankBlock({ ex, saved, onCheck, onReset, nav }: BlockProps) {
   };
 
   function placeAt(key: string, id: string, from?: string) {
-    if (checked) return;
+    if (checked || readOnly) return;
     setPlaced((prev) => {
       const next = { ...prev };
       for (const k of Object.keys(next)) if (next[k] === id) delete next[k];
@@ -131,7 +139,7 @@ function BankBlock({ ex, saved, onCheck, onReset, nav }: BlockProps) {
     });
   }
   function clearBlank(key: string) {
-    if (checked) return;
+    if (checked || readOnly) return;
     setPlaced((prev) => { const next = { ...prev }; delete next[key]; return next; });
   }
   function tapWord(id: string) {
@@ -148,7 +156,7 @@ function BankBlock({ ex, saved, onCheck, onReset, nav }: BlockProps) {
 
   return (
     <>
-      <section className={card}>
+      <section className={`${card}${readOnly ? " pointer-events-none" : ""}`}>
         <div className="flex flex-col gap-4">
           {!checked && (
             <div
@@ -204,24 +212,27 @@ function BankBlock({ ex, saved, onCheck, onReset, nav }: BlockProps) {
           </div>
         </div>
       </section>
-      <BlockActions
-        checked={checked}
-        nav={nav}
-        onConfirm={() => {
-          setChecked(true);
-          onCheck(ex.Sentences.map((s) => {
-            const submitted = s.answer.map((_, i) => wordById(placed[`${s.id}:${i}`] ?? ""));
-            return { id: s.id, submitted, correct: isCorrect(s.answer, submitted) };
-          }));
-        }}
-        onReset={() => { onReset(); setChecked(false); setPlaced({}); }}
-      />
+      {!readOnly && (
+        <BlockActions
+          checked={checked}
+          nav={nav}
+          single={single}
+          onConfirm={() => {
+            setChecked(true);
+            onCheck(ex.Sentences.map((s) => {
+              const submitted = s.answer.map((_, i) => wordById(placed[`${s.id}:${i}`] ?? ""));
+              return { id: s.id, submitted, correct: isCorrect(s.answer, submitted) };
+            }));
+          }}
+          onReset={() => { onReset(); setChecked(false); setPlaced({}); }}
+        />
+      )}
     </>
   );
 }
 
 // ── choice: an inline dropdown per gap ────────────────────────────────────────
-function ChoiceBlock({ ex, saved, onCheck, onReset, nav }: BlockProps) {
+function ChoiceBlock({ ex, saved, onCheck, onReset, nav, single, readOnly }: BlockProps<ChoiceExercise>) {
   const [opts] = useState<Record<string, string[][]>>(() =>
     Object.fromEntries(ex.Sentences.map((s) => [s.id, gapOptions(s).map((g) => shuffle(g))]))
   );
@@ -241,7 +252,7 @@ function ChoiceBlock({ ex, saved, onCheck, onReset, nav }: BlockProps) {
 
   return (
     <>
-      <section className={card}>
+      <section className={`${card}${readOnly ? " pointer-events-none" : ""}`}>
         <div className="flex flex-col gap-3">
           {ex.Sentences.map((s) => {
             const parts = segments(s.text);
@@ -270,23 +281,116 @@ function ChoiceBlock({ ex, saved, onCheck, onReset, nav }: BlockProps) {
           })}
         </div>
       </section>
-      <BlockActions
-        checked={checked}
-        nav={nav}
-        onConfirm={() => {
-          setChecked(true);
-          onCheck(ex.Sentences.map((s) => ({ id: s.id, submitted: sel[s.id], correct: isCorrect(s.answer, sel[s.id]) })));
-        }}
-        onReset={() => { onReset(); setChecked(false); setSel(Object.fromEntries(ex.Sentences.map((s) => [s.id, s.answer.map(() => "")]))); }}
-      />
+      {!readOnly && (
+        <BlockActions
+          checked={checked}
+          nav={nav}
+          single={single}
+          onConfirm={() => {
+            setChecked(true);
+            onCheck(ex.Sentences.map((s) => ({ id: s.id, submitted: sel[s.id], correct: isCorrect(s.answer, sel[s.id]) })));
+          }}
+          onReset={() => { onReset(); setChecked(false); setSel(Object.fromEntries(ex.Sentences.map((s) => [s.id, s.answer.map(() => "")]))); }}
+        />
+      )}
     </>
   );
 }
 
-export default function ExerciseWorksheet({ exercises, collectionID, saved }: {
+// ── quiz: a multiple-choice question (former "test"), answered in place ─────────
+function QuizBlock({ ex, saved, onCheck, onReset, nav, single, active, readOnly }: BlockProps<QuizExercise>) {
+  const options = ex.Options ?? [];
+  const multi = options.filter((o) => o.is_correct).length > 1;
+  const savedSel = saved[ex.ID];
+  const [sel, setSel] = useState<Set<number>>(() => {
+    const s = new Set<number>();
+    if (savedSel) options.forEach((o, i) => { if (savedSel.includes(o.text)) s.add(i); });
+    return s;
+  });
+  const [checked, setChecked] = useState(() => !!savedSel);
+
+  function toggle(i: number) {
+    if (checked || readOnly) return;
+    setSel((prev) => {
+      if (!multi) return new Set([i]);
+      const next = new Set(prev);
+      next.has(i) ? next.delete(i) : next.add(i);
+      return next;
+    });
+  }
+  // correct = every option's correctness matches whether it was picked (single & multi)
+  const correct = () => options.every((o, i) => o.is_correct === sel.has(i));
+  function confirmNow() {
+    setChecked(true);
+    onCheck([{ id: ex.ID, correct: correct(), submitted: [...sel].map((i) => options[i].text) }]);
+  }
+
+  // Keyboard (active block): 1..N pick an option; Enter confirms, then advances.
+  useEffect(() => {
+    if (!active || readOnly) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        if (!checked) confirmNow();
+        else if (!nav.isLast) nav.onNext();
+        return;
+      }
+      if (checked) return;
+      const n = parseInt(e.key, 10);
+      if (isNaN(n) || n < 1 || n > options.length) return;
+      e.preventDefault();
+      const i = n - 1;
+      setSel((prev) => {
+        if (!multi) return new Set([i]);
+        const next = new Set(prev);
+        next.has(i) ? next.delete(i) : next.add(i);
+        return next;
+      });
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, checked, multi, sel, nav]);
+
+  return (
+    <div className={card}>
+      <p className="font-medium text-gray-800 dark:text-slate-200 mb-1">{ex.Question}</p>
+      <p className="text-xs text-gray-400 dark:text-slate-500 mb-4">{multi ? "Select all that apply" : "Select one"}</p>
+      <div className="flex flex-col gap-2 pl-6">
+        {options.map((o, i) => (
+          <OptionButton
+            key={i}
+            index={i}
+            text={o.text}
+            multi={multi}
+            selected={sel.has(i)}
+            submitted={checked}
+            isCorrect={o.is_correct}
+            explanation={o.explanation}
+            onClick={() => toggle(i)}
+            disabled={readOnly || checked}
+          />
+        ))}
+      </div>
+      {!readOnly && (
+        <BlockActions
+          checked={checked}
+          onConfirm={confirmNow}
+          onReset={() => { onReset(); setChecked(false); setSel(new Set()); }}
+          nav={nav}
+          single={single}
+        />
+      )}
+    </div>
+  );
+}
+
+export default function ExerciseWorksheet({ exercises, collectionID, saved, single, readOnly }: {
   exercises: Exercise[];
   collectionID: string;
   saved: Record<string, string[]>;
+  single?: boolean;   // one exercise at a time on all screens (blitz-style), with prev/next nav
+  readOnly?: boolean; // review display: show saved answers, no actions/interaction (collection page)
 }) {
   const [current, setCurrent] = useState(0);
 
@@ -327,7 +431,7 @@ export default function ExerciseWorksheet({ exercises, collectionID, saved }: {
   return (
     <div className="flex flex-col gap-8" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
       {exercises.map((ex, i) => (
-        <div key={ex.ID} className={`${i === current ? "block" : "hidden"} sm:block`}>
+        <div key={ex.ID} className={single ? (i === current ? "block" : "hidden") : "block"}>
           {/* header sits outside the card, like the counter/badge in blitz */}
           <div className="flex items-center justify-between gap-2 mb-2 px-1">
             <div className="flex items-center gap-2 min-w-0">
@@ -339,8 +443,10 @@ export default function ExerciseWorksheet({ exercises, collectionID, saved }: {
             </span>
           </div>
           {ex.Kind === "bank"
-            ? <BankBlock ex={ex} saved={saved} onCheck={record} onReset={() => reset(ex.ID)} nav={nav(i)} />
-            : <ChoiceBlock ex={ex} saved={saved} onCheck={record} onReset={() => reset(ex.ID)} nav={nav(i)} />}
+            ? <BankBlock ex={ex} saved={saved} onCheck={record} onReset={() => reset(ex.ID)} nav={nav(i)} single={single} active={i === current} readOnly={readOnly} />
+            : ex.Kind === "quiz"
+            ? <QuizBlock ex={ex} saved={saved} onCheck={record} onReset={() => reset(ex.ID)} nav={nav(i)} single={single} active={i === current} readOnly={readOnly} />
+            : <ChoiceBlock ex={ex} saved={saved} onCheck={record} onReset={() => reset(ex.ID)} nav={nav(i)} single={single} active={i === current} readOnly={readOnly} />}
         </div>
       ))}
     </div>

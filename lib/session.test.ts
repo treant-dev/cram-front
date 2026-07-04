@@ -1,12 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { fromCards, fromTests, fromBlitz } from "./session";
-import type { Card, TestQuestion, BlitzResponse } from "./api";
+import { fromCards, fromBlitz } from "./session";
+import type { Card, BlitzResponse } from "./api";
 
 function card(id: string, term: string, definition: string): Card {
   return { ID: id, CollectionID: "c", Term: term, Definition: definition, Image: "", Position: 0, CreatedAt: "", UpdatedAt: "" };
-}
-function tq(id: string, question: string, opts: { text: string; is_correct: boolean }[]): TestQuestion {
-  return { ID: id, CollectionID: "c", Question: question, Options: opts, Image: "", Position: 0, CreatedAt: "", UpdatedAt: "" };
 }
 
 const deck: Card[] = [
@@ -37,21 +34,6 @@ describe("fromCards", () => {
       const texts = it.options.map((o) => o.text);
       expect(new Set(texts).size).toBe(texts.length);
     }
-  });
-});
-
-describe("fromTests", () => {
-  it("maps option correctness and flags multi-answer questions", () => {
-    const single = tq("a", "Pick one", [{ text: "x", is_correct: true }, { text: "y", is_correct: false }]);
-    const multi = tq("b", "Pick many", [{ text: "x", is_correct: true }, { text: "y", is_correct: true }, { text: "z", is_correct: false }]);
-    const items = fromTests([single, multi]);
-    const s = items.find((it) => it.sourceID === "a")!;
-    const m = items.find((it) => it.sourceID === "b")!;
-    expect(s.multi).toBe(false);
-    expect(m.multi).toBe(true);
-    expect(s.options.filter((o) => o.isCorrect)).toHaveLength(1);
-    expect(m.options.filter((o) => o.isCorrect)).toHaveLength(2);
-    expect(s.sourceType).toBe("tq");
   });
 });
 

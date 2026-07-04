@@ -7,14 +7,18 @@ type Props = {
   isCorrect: boolean;
   explanation?: string;
   onClick: () => void;
+  disabled?: boolean;
 };
 
-export default function OptionButton({ index, text, multi, selected, submitted, isCorrect, explanation, onClick }: Props) {
+export default function OptionButton({ index, text, multi, selected, submitted, isCorrect, explanation, onClick, disabled }: Props) {
   function containerClass() {
     const base = "w-full text-left px-4 py-3 rounded-xl border text-sm font-medium transition-colors flex items-center gap-3 ";
-    if (!submitted) return base + (selected
-      ? "border-indigo-400 dark:border-indigo-500 bg-indigo-50 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300"
-      : "border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-800 dark:text-slate-200 hover:border-indigo-300 dark:hover:border-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20");
+    if (!submitted) {
+      if (selected) return base + "border-indigo-400 dark:border-indigo-500 bg-indigo-50 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300";
+      return base + (disabled
+        ? "border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-500 dark:text-slate-400 cursor-default"
+        : "border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-800 dark:text-slate-200 hover:border-indigo-300 dark:hover:border-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20");
+    }
     if (isCorrect) return base + "border-green-400 dark:border-green-600 bg-green-50 dark:bg-green-900/40 text-green-700 dark:text-green-300";
     if (selected) return base + "border-red-400 dark:border-red-600 bg-red-50 dark:bg-red-900/40 text-red-700 dark:text-red-300";
     return base + "border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-400 dark:text-slate-500";
@@ -33,7 +37,7 @@ export default function OptionButton({ index, text, multi, selected, submitted, 
     <div className="relative">
       <span className="absolute right-full mr-2 top-1/2 -translate-y-1/2 w-5 text-center text-xs font-mono text-gray-400 dark:text-slate-500">{index + 1}</span>
       <div className="flex flex-col gap-1">
-        <button onClick={onClick} className={containerClass()}>
+        <button onClick={onClick} disabled={disabled} className={containerClass()}>
           <span className={indicatorClass()}>
             {selected && !submitted && (
               multi

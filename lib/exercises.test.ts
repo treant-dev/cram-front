@@ -1,11 +1,11 @@
 import { describe, it, expect } from "vitest";
 import { segments, blankCount, comboEq, isCorrect, bankPool, gapOptions } from "./exercises";
-import type { Exercise, ExerciseSentence } from "./api";
+import type { BankExercise, ExerciseSentence } from "./api";
 
 function sentence(s: Partial<ExerciseSentence>): ExerciseSentence {
   return { id: "s", text: "", answer: [], position: 0, ...s };
 }
-function exercise(e: Partial<Exercise>): Exercise {
+function exercise(e: Partial<BankExercise>): BankExercise {
   return { ID: "e", CollectionID: "c", Kind: "bank", Title: "", Sentences: [], Distractors: null, Position: 0, CreatedAt: "", UpdatedAt: "", ...e };
 }
 

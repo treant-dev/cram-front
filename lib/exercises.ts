@@ -1,5 +1,5 @@
 // Pure helpers for the exercise worksheet (no React/DOM) — unit-tested in exercises.test.ts.
-import { Exercise, ExerciseSentence } from "./api";
+import { BankExercise, ExerciseSentence } from "./api";
 
 // Static text segments around the blanks; N blanks → N+1 segments.
 export function segments(text: string): string[] {
@@ -23,7 +23,7 @@ export function isCorrect(answer: string[], submitted: string[]): boolean {
 
 // Words making up a bank exercise's shared pool (answers of every sentence + extra
 // distractors), before shuffling. May contain duplicates (a multiset).
-export function bankPool(ex: Exercise): string[] {
+export function bankPool(ex: BankExercise): string[] {
   const words: string[] = [];
   ex.Sentences.forEach((s) => words.push(...s.answer));
   if (ex.Distractors) words.push(...ex.Distractors);
