@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type TouchEvent as ReactTouchEvent } from "react";
 import { Exercise, BankExercise, ChoiceExercise, QuizExercise, api } from "@/lib/api";
-import { segments, isCorrect, bankPool, gapOptions } from "@/lib/exercises";
+import { segments, isCorrect, isAnswered, bankPool, gapOptions } from "@/lib/exercises";
 import OptionButton from "@/components/OptionButton";
 import { ConfirmDialog } from "@/components/Modal";
 
@@ -19,6 +19,7 @@ type BlockProps<E extends Exercise> = {
   readOnly?: boolean; // review display: no actions, no interaction
   tint?: string;      // status-tinted card classes (edit mode); default neutral card
   bare?: boolean;     // render only the interior (no card wrapper) — for embedding in ItemShell
+  onDone?: () => void; // stepper: finish action on the last block (e.g. back to collection)
 };
 
 function shuffle<T>(arr: T[]): T[] {
@@ -68,8 +69,8 @@ function slotColor(state: "empty" | "filled" | "correct" | "wrong"): string {
 //     their role (right = forward action, centre = secondary), so nothing jumps.
 //   Desktop (all blocks visible, no nav): a single centred action that swaps Confirm↔Reset
 //     in place — a lone button reads best centred (no left hint to balance it like blitz).
-function BlockActions({ checked, onConfirm, onReset, onSkip, nav, single }: {
-  checked: boolean; onConfirm: () => void; onReset: () => void; onSkip?: () => void; nav: Nav; single?: boolean;
+function BlockActions({ checked, onConfirm, onReset, onSkip, onDone, nav, single }: {
+  checked: boolean; onConfirm: () => void; onReset: () => void; onSkip?: () => void; onDone?: () => void; nav: Nav; single?: boolean;
 }) {
   return (
     <>
@@ -85,7 +86,9 @@ function BlockActions({ checked, onConfirm, onReset, onSkip, nav, single }: {
         </div>
         <div className="justify-self-end">
           {checked
-            ? (!nav.isLast && <button type="button" onClick={nav.onNext} className={nextBtn}>Next →</button>)
+            ? (nav.isLast
+                ? (onDone && <button type="button" onClick={onDone} className={nextBtn}>Done</button>)
+                : <button type="button" onClick={nav.onNext} className={nextBtn}>Next →</button>)
             : <button type="button" onClick={onConfirm} className={confirmBtn}>Confirm</button>}
         </div>
       </div>
@@ -103,7 +106,7 @@ function BlockActions({ checked, onConfirm, onReset, onSkip, nav, single }: {
 // ── bank: shared shuffled word pool, drag-and-drop (or tap) into blanks ────────
 type PoolWord = { id: string; word: string };
 
-function BankBlock({ ex, saved, onCheck, onReset, nav, single, readOnly, tint, bare }: BlockProps<BankExercise>) {
+function BankBlock({ ex, saved, onCheck, onReset, nav, single, readOnly, tint, bare, onDone }: BlockProps<BankExercise>) {
   const [poolWords] = useState<PoolWord[]>(() =>
     shuffle(bankPool(ex).map((word, i) => ({ id: `p${i}`, word })))
   );
@@ -114,15 +117,15 @@ function BankBlock({ ex, saved, onCheck, onReset, nav, single, readOnly, tint, b
     const used = new Set<string>();
     for (const s of ex.Sentences) {
       const sub = saved[s.id];
-      if (!sub) continue;
-      sub.forEach((word, i) => {
+      if (!isAnswered(sub)) continue;
+      sub!.forEach((word, i) => {
         const m = poolWords.find((p) => p.word === word && !used.has(p.id));
         if (m) { init[`${s.id}:${i}`] = m.id; used.add(m.id); }
       });
     }
     return init;
   });
-  const [checked, setChecked] = useState(() => ex.Sentences.some((s) => saved[s.id]));
+  const [checked, setChecked] = useState(() => ex.Sentences.some((s) => isAnswered(saved[s.id])));
   const dragRef = useRef<{ id: string; from?: string } | null>(null);
 
   const wordById = (id: string) => poolWords.find((p) => p.id === id)?.word ?? "";
@@ -223,6 +226,7 @@ function BankBlock({ ex, saved, onCheck, onReset, nav, single, readOnly, tint, b
           checked={checked}
           nav={nav}
           single={single}
+          onDone={onDone}
           onConfirm={() => {
             setChecked(true);
             onCheck(ex.Sentences.map((s) => {
@@ -238,14 +242,14 @@ function BankBlock({ ex, saved, onCheck, onReset, nav, single, readOnly, tint, b
 }
 
 // ── choice: an inline dropdown per gap ────────────────────────────────────────
-function ChoiceBlock({ ex, saved, onCheck, onReset, nav, single, readOnly, tint, bare }: BlockProps<ChoiceExercise>) {
+function ChoiceBlock({ ex, saved, onCheck, onReset, nav, single, readOnly, tint, bare, onDone }: BlockProps<ChoiceExercise>) {
   const [opts] = useState<Record<string, string[][]>>(() =>
     Object.fromEntries(ex.Sentences.map((s) => [s.id, gapOptions(s).map((g) => shuffle(g))]))
   );
   const [sel, setSel] = useState<Record<string, string[]>>(() =>
     Object.fromEntries(ex.Sentences.map((s) => [s.id, s.answer.map((_, i) => saved[s.id]?.[i] ?? "")]))
   );
-  const [checked, setChecked] = useState(() => ex.Sentences.some((s) => saved[s.id]));
+  const [checked, setChecked] = useState(() => ex.Sentences.some((s) => isAnswered(saved[s.id])));
 
   function setGap(sid: string, i: number, val: string) {
     if (checked) return;
@@ -292,6 +296,7 @@ function ChoiceBlock({ ex, saved, onCheck, onReset, nav, single, readOnly, tint,
           checked={checked}
           nav={nav}
           single={single}
+          onDone={onDone}
           onConfirm={() => {
             setChecked(true);
             onCheck(ex.Sentences.map((s) => ({ id: s.id, submitted: sel[s.id], correct: isCorrect(s.answer, sel[s.id]) })));
@@ -304,7 +309,7 @@ function ChoiceBlock({ ex, saved, onCheck, onReset, nav, single, readOnly, tint,
 }
 
 // ── quiz: a multiple-choice question (former "test"), answered in place ─────────
-function QuizBlock({ ex, saved, onCheck, onReset, nav, single, active, readOnly, tint, bare }: BlockProps<QuizExercise>) {
+function QuizBlock({ ex, saved, onCheck, onReset, nav, single, active, readOnly, tint, bare, onDone }: BlockProps<QuizExercise>) {
   const options = ex.Options ?? [];
   const multi = options.filter((o) => o.is_correct).length > 1;
   const savedSel = saved[ex.ID];
@@ -313,7 +318,7 @@ function QuizBlock({ ex, saved, onCheck, onReset, nav, single, active, readOnly,
     if (savedSel) options.forEach((o, i) => { if (savedSel.includes(o.text)) s.add(i); });
     return s;
   });
-  const [checked, setChecked] = useState(() => !!savedSel);
+  const [checked, setChecked] = useState(() => isAnswered(savedSel));
   const [confirmSkip, setConfirmSkip] = useState(false);
 
   function toggle(i: number) {
@@ -390,6 +395,7 @@ function QuizBlock({ ex, saved, onCheck, onReset, nav, single, active, readOnly,
           onConfirm={confirmNow}
           onReset={resetNow}
           onSkip={() => setConfirmSkip(true)}
+          onDone={onDone}
           nav={nav}
           single={single}
         />
@@ -425,13 +431,14 @@ export function ExerciseBody({ ex, saved }: { ex: Exercise; saved: Record<string
   return <ChoiceBlock {...common} ex={ex} />;
 }
 
-export default function ExerciseWorksheet({ exercises, collectionID, saved, single, readOnly, edit }: {
+export default function ExerciseWorksheet({ exercises, collectionID, saved, single, readOnly, edit, onDone }: {
   exercises: Exercise[];
   collectionID: string;
   saved: Record<string, string[]>;
   single?: boolean;   // one exercise at a time on all screens (blitz-style), with prev/next nav
   readOnly?: boolean; // review display: show saved answers, no actions/interaction (collection page)
   edit?: EditControls; // edit-mode overlay (implies read-only display)
+  onDone?: () => void; // stepper: finish action shown on the last block
 }) {
   const [current, setCurrent] = useState(0);
   const ro = readOnly || !!edit;
@@ -497,10 +504,10 @@ export default function ExerciseWorksheet({ exercises, collectionID, saved, sing
             </div>
           </div>
           {ex.Kind === "bank"
-            ? <BankBlock ex={ex} saved={saved} onCheck={record} onReset={() => reset(ex.ID)} nav={nav(i)} single={single} active={i === current} readOnly={ro} tint={tint} />
+            ? <BankBlock ex={ex} saved={saved} onCheck={record} onReset={() => reset(ex.ID)} nav={nav(i)} single={single} active={i === current} readOnly={ro} tint={tint} onDone={onDone} />
             : ex.Kind === "quiz"
-            ? <QuizBlock ex={ex} saved={saved} onCheck={record} onReset={() => reset(ex.ID)} nav={nav(i)} single={single} active={i === current} readOnly={ro} tint={tint} />
-            : <ChoiceBlock ex={ex} saved={saved} onCheck={record} onReset={() => reset(ex.ID)} nav={nav(i)} single={single} active={i === current} readOnly={ro} tint={tint} />}
+            ? <QuizBlock ex={ex} saved={saved} onCheck={record} onReset={() => reset(ex.ID)} nav={nav(i)} single={single} active={i === current} readOnly={ro} tint={tint} onDone={onDone} />
+            : <ChoiceBlock ex={ex} saved={saved} onCheck={record} onReset={() => reset(ex.ID)} nav={nav(i)} single={single} active={i === current} readOnly={ro} tint={tint} onDone={onDone} />}
         </div>
         );
       })}

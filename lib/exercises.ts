@@ -21,6 +21,14 @@ export function isCorrect(answer: string[], submitted: string[]): boolean {
   return comboEq(answer, submitted);
 }
 
+// A saved submission counts as "answered" only if it has at least one non-blank
+// word. Skipped/empty submissions ([] or [""]) must NOT lock a block into its
+// checked state — that would hide the word bank / options and leave the blanks
+// empty, making the exercise look broken.
+export function isAnswered(submitted?: string[]): boolean {
+  return !!submitted && submitted.some((w) => w.trim() !== "");
+}
+
 // Words making up a bank exercise's shared pool (answers of every sentence + extra
 // distractors), before shuffling. May contain duplicates (a multiset).
 export function bankPool(ex: BankExercise): string[] {

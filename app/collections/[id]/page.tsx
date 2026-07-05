@@ -42,15 +42,16 @@ function exerciseFromEntry(e: DraftDiffEntry): Exercise {
 // ── Unified item shell (one design for all types) ───────────────────────────────
 
 // Emoji action button (external panel).
-function IconBtn({ emoji, title, onClick, danger, type = "button", form }: { emoji: string; title: string; onClick?: () => void; danger?: boolean; type?: "button" | "submit"; form?: string }) {
+function IconBtn({ emoji, title, onClick, danger, type = "button", form, disabled }: { emoji: string; title: string; onClick?: () => void; danger?: boolean; type?: "button" | "submit"; form?: string; disabled?: boolean }) {
   return (
     <button
       type={type}
       form={form}
       onClick={onClick}
+      disabled={disabled}
       title={title}
       aria-label={title}
-      className={`w-9 h-9 flex items-center justify-center rounded-lg border text-base bg-white dark:bg-slate-800 shrink-0 ${
+      className={`w-9 h-9 flex items-center justify-center rounded-lg border text-base bg-white dark:bg-slate-800 shrink-0 disabled:opacity-40 disabled:cursor-not-allowed ${
         danger
           ? "border-red-200 dark:border-red-800 hover:bg-red-50 dark:hover:bg-red-900/20"
           : "border-gray-200 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-700"
@@ -75,17 +76,19 @@ const typeBadge: Record<string, string> = {
 // mode); the action panel is a separate column parked in the right gutter on desktop
 // (absolute, doesn't shrink the card) and stacks below on mobile. topLeft holds a
 // per-type corner slot (e.g. the card's speaker); meta (number + type) sits top-right.
-function ItemShell({ type, tint, actions, onClick, children }: {
+function ItemShell({ type, tint, actions, meta, onClick, children }: {
   type: string;
   tint: string;
   actions: ReactNode;
+  meta?: ReactNode; // sits inside the corner next to the type badge (e.g. the level dot)
   onClick?: () => void; // tap the block to toggle expand (view mode)
   children: ReactNode;
 }) {
   return (
     <div className="relative">
       <div onClick={onClick} className={`relative border rounded-xl px-4 py-3 ${tint} ${onClick ? "cursor-pointer" : ""}`}>
-        <div className="absolute top-2.5 right-3">
+        <div className="absolute top-2.5 right-3 flex items-center gap-2">
+          {meta}
           <span className={`text-xs font-medium px-2 py-0.5 rounded-full capitalize ${typeBadge[type] ?? "bg-gray-100 text-gray-500 dark:bg-slate-800 dark:text-slate-400"}`}>{type}</span>
         </div>
         <div className="pr-16">{children}</div>
@@ -184,10 +187,12 @@ function parseImportPreview(text: string): PreviewItem[] {
   return out;
 }
 
-function ImportItemsPanel({ collectionID, onImported, onCancel, draft }: {
+type ImportControl = { emoji: string; title: string; disabled: boolean; onClick: () => void };
+
+function ImportItemsPanel({ collectionID, onImported, onControls, draft }: {
   collectionID: string;
   onImported: () => void;
-  onCancel: () => void;
+  onControls: (c: ImportControl | null) => void; // exposes the Preview/Import button to the modal header
   draft?: boolean;
 }) {
   const [text, setText] = useState("");
@@ -196,6 +201,7 @@ function ImportItemsPanel({ collectionID, onImported, onCancel, draft }: {
   const [result, setResult] = useState<{ imported: number; skipped: number } | null>(null);
   const [preview, setPreview] = useState<PreviewItem[] | null>(null); // set after Preview; gates Import
   const [copied, setCopied] = useState(false);
+  const [dragging, setDragging] = useState(false); // a file is being dragged over the textarea
 
   function doPreview() {
     if (!text.trim()) return;
@@ -233,13 +239,38 @@ function ImportItemsPanel({ collectionID, onImported, onCancel, draft }: {
     }).catch(() => {});
   }
 
+  // Publish the header action (Preview before a preview exists, then Import) to the
+  // modal. Deps are primitives so the parent's re-render doesn't re-fire this (no loop).
+  useEffect(() => {
+    onControls(
+      preview
+        ? { emoji: "💾", title: importing ? "Importing…" : `Import${preview.length ? ` (${preview.length})` : ""}`, disabled: importing || preview.length === 0, onClick: doImport }
+        : { emoji: "👀", title: "Preview", disabled: !text.trim(), onClick: doPreview }
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [text, preview, importing]);
+  // Clear the header action when the panel unmounts (e.g. modal closes).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => () => onControls(null), []);
+
   return (
     <div className={formCls}>
       <textarea
-        className={inputCls + " min-h-[180px] resize-y font-mono text-xs"}
-        placeholder={exampleMixedJSON}
+        className={`${inputCls} min-h-[180px] resize-y font-mono text-xs ${dragging ? "ring-2 ring-indigo-400 border-indigo-400" : ""}`}
+        placeholder={`${exampleMixedJSON}\n\n…or drop a .json file here`}
         value={text}
         onChange={(e) => { setText(e.target.value); setResult(null); setPreview(null); }}
+        onDragOver={(e) => { e.preventDefault(); if (!dragging) setDragging(true); }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragging(false);
+          const file = e.dataTransfer.files?.[0];
+          if (!file) return;
+          file.text()
+            .then((content) => { setText(content); setResult(null); setPreview(null); setError(null); })
+            .catch(() => setError("Couldn't read the dropped file."));
+        }}
         spellCheck={false}
         autoCorrect="off"
         autoCapitalize="off"
@@ -284,16 +315,6 @@ function ImportItemsPanel({ collectionID, onImported, onCancel, draft }: {
           >
             {copied ? "✓ Copied!" : "📋 Copy prompt for AI"}
           </button>
-          <button type="button" onClick={onCancel} className="text-sm text-gray-500 dark:text-slate-400 px-3 py-1 hover:text-gray-700 dark:hover:text-slate-200">{result ? "Done" : "Cancel"}</button>
-          {preview ? (
-            <button onClick={doImport} disabled={importing || preview.length === 0} className="bg-indigo-600 text-white px-4 py-1.5 rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50">
-              {importing ? "Importing…" : `Import${preview.length ? ` (${preview.length})` : ""}`}
-            </button>
-          ) : (
-            <button onClick={doPreview} disabled={!text.trim()} className="bg-indigo-600 text-white px-4 py-1.5 rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50">
-              Preview
-            </button>
-          )}
         </div>
       </div>
     </div>
@@ -312,11 +333,14 @@ function AddItemModal({ collectionID, userRole, draft, onClose, onCardSave, onQu
   onImported: () => void;
 }) {
   const [type, setType] = useState<"card" | "quiz" | "import" | null>(null);
+  const [importControls, setImportControls] = useState<ImportControl | null>(null);
   const FORM_ID = "add-item-form";
-  // Card/Quiz forms submit via a Save button parked in the modal's top-left corner
-  // (opposite the ✕ close). Exercises have no inline form — they come in via Import JSON.
+  // Top-left corner (opposite the ✕ close): Card/Quiz submit their form via 💾 Save;
+  // Import shows its Preview/Import toggle there (exposed by the panel).
   const leftAction = (type === "card" || type === "quiz")
     ? <IconBtn type="submit" form={FORM_ID} emoji="💾" title="Save" />
+    : type === "import" && importControls
+    ? <IconBtn emoji={importControls.emoji} title={importControls.title} disabled={importControls.disabled} onClick={importControls.onClick} />
     : undefined;
   // Picker options — the third choice opens the universal JSON importer.
   const choices: { value: "card" | "quiz" | "import"; label: string }[] = [
@@ -345,7 +369,7 @@ function AddItemModal({ collectionID, userRole, draft, onClose, onCardSave, onQu
       ) : type === "quiz" ? (
         <TestForm formId={FORM_ID} hideActions onSave={(q, o, i) => { onQuizSave(q, o, i); onClose(); }} onCancel={() => setType(null)} />
       ) : (
-        <ImportItemsPanel collectionID={collectionID} draft={draft} onImported={onImported} onCancel={() => setType(null)} />
+        <ImportItemsPanel collectionID={collectionID} draft={draft} onImported={onImported} onControls={setImportControls} />
       )}
     </Modal>
   );
@@ -521,7 +545,9 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
   const [editingTest, setEditingTest] = useState<TestQuestion | null>(null);
   const [showAddModal, setShowAddModal] = useState(false); // Add-item modal (edit + view)
   const [savedResults, setSavedResults] = useState<Record<string, string[]> | null>(null);
-  const [showImport, setShowImport] = useState(false); // unified import panel
+  // Bumped after publish/discard/exit to remount the exercise blocks so they re-seed
+  // their answered state from fresh savedResults (their useState initializers run once).
+  const [viewNonce, setViewNonce] = useState(0);
   const [saving, setSaving] = useState(false);
   const [shareToken, setShareToken] = useState<string | null>(null);
   const [shareLoading, setShareLoading] = useState(false);
@@ -655,6 +681,18 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
     }
   }
 
+  // Re-fetch saved answers and remount the exercise blocks so the live view reflects
+  // the current state (their answered state seeds once, on mount).
+  async function reloadResults(cid: string) {
+    try {
+      const res = await api.exercises.getResults(cid);
+      const m: Record<string, string[]> = {};
+      for (const [sid, e] of Object.entries(res)) m[sid] = e.submitted;
+      setSavedResults(m);
+    } catch { /* ignore */ }
+    setViewNonce((n) => n + 1);
+  }
+
   // Exit editor, keep the draft staged (resume later).
   async function exitEdit() {
     if (!collection) return;
@@ -662,6 +700,7 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
     try {
       await saveMeta();
       setEditMode(false);
+      await reloadResults(collection.ID);
       closeAllForms();
     } finally {
       setSaving(false);
@@ -679,6 +718,7 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
       setCollection(refreshed);
       setHasDraft(false);
       setEditMode(false);
+      await reloadResults(collection.ID);
       closeAllForms();
     } finally {
       setSaving(false);
@@ -695,6 +735,7 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
       setCollection(refreshed);
       setHasDraft(false);
       setEditMode(false);
+      await reloadResults(collection.ID);
       closeAllForms();
     } finally {
       setSaving(false);
@@ -702,7 +743,6 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
   }
 
   function closeAllForms() {
-    setShowImport(false);
     setShowAddModal(false);
     setEditingCard(null);
     setEditingTest(null);
@@ -949,6 +989,7 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
   const itemCount = cards.length + allExercises.length;
   const hasFlip = cards.length >= 2;               // flip-card mode needs ≥2 cards
   const hasBlitz = cards.length >= 1;              // blitz is cards-only
+  const hasMatch = cards.length >= 5;              // matching mini-game needs ≥5 pairs
   const allItemKeys = cards.map((c) => `card:${c.ID}`); // progress is card-only
   const allMastered = allItemKeys.length > 0 && allItemKeys.every((k) => itemProgress[k]?.level === 7);
   const now = new Date();
@@ -1030,6 +1071,13 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
             {hasFlip && (
               <Link href={`/collections/${collection.ID}/cards`} className="bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors">Cards</Link>
             )}
+            {cards.length >= 1 && (
+              hasMatch ? (
+                <Link href={`/collections/${collection.ID}/match`} className="bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors">Match</Link>
+              ) : (
+                <span title="Needs at least 5 cards" className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-400 dark:text-slate-600 px-4 py-2 rounded-lg text-sm font-medium cursor-not-allowed">Match</span>
+              )
+            )}
             {hasExercises && (
               <Link href={`/collections/${collection.ID}/exercises`} className="bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors">Exercise</Link>
             )}
@@ -1050,9 +1098,9 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
               {isOwner && (
                 <button
                   onClick={() => setShowAddModal(true)}
-                  className="px-4 py-2 rounded-lg text-sm font-medium border border-indigo-300 dark:border-indigo-700 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-colors"
+                  className="px-4 py-2 rounded-lg text-sm font-medium border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-300 hover:border-indigo-400 dark:hover:border-indigo-500 transition-colors"
                 >
-                  ➕ Add item
+                  + Add item
                 </button>
               )}
               {collapsibleIds.length > 0 && (
@@ -1078,17 +1126,9 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
               <div className="ml-auto flex gap-2">
                 <button
                   onClick={() => setShowAddModal(true)}
-                  className={`${btnBase} border-indigo-300 dark:border-indigo-700 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/40`}>➕ Add item</button>
-                <button
-                  onClick={() => { const open = showImport; closeAllForms(); setShowImport(!open); }}
-                  className={`${btnBase} border-indigo-300 dark:border-indigo-700 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/40`}>📥 Import</button>
+                  className={`${btnBase} border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700`}>+ Add item</button>
               </div>
             </div>
-            {showImport && (
-              <div className="mb-4">
-                <ImportItemsPanel collectionID={collection.ID} draft onCancel={() => setShowImport(false)} onImported={() => refreshDraft(collection.ID)} />
-              </div>
-            )}
           </div>
         )}
 
@@ -1118,7 +1158,14 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
               // In view mode cards/quiz collapse to their prompt; edit mode shows everything.
               const showAnswer = editMode || expandedIds.has(entry.id);
               const collapsible = !editMode && (entry.kind === "card" || entry.kind === "quiz");
-              const quizEx = entry.kind === "quiz" ? allExercises.find((e) => e.ID === entry.id) : undefined;
+              // Staged-deleted quizzes aren't in allExercises anymore, so fall back to
+              // rebuilding the QuizExercise from the entry (otherwise the row renders empty).
+              const quizEx = entry.kind === "quiz"
+                ? (allExercises.find((e) => e.ID === entry.id) ?? {
+                    ID: entry.id, CollectionID: "", Title: "", Position: 0, CreatedAt: "", UpdatedAt: "",
+                    Kind: "quiz", Question: entry.quiz.Question, Options: entry.quiz.Options,
+                  } as Exercise)
+                : undefined;
               // Does the user have saved answers for this exercise/quiz? (Reset only shows if so.)
               const hasAnswers =
                 entry.kind === "quiz" ? !!savedResults?.[entry.id]
@@ -1143,9 +1190,12 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
                       <IconBtn emoji="🗑" title="Delete" danger onClick={() => deleteExercise(entry.id)} />
                       {hasAnswers && <IconBtn emoji="🔄" title="Reset answers" onClick={() => resetExerciseAnswers(entry.id)} />}
                     </>
-                : entry.kind === "card"
-                ? <LevelDot level={itemProgress[`card:${entry.id}`]?.level} nextReviewAt={itemProgress[`card:${entry.id}`]?.next_review_at} />
                 : null;
+              // View-mode cards show their spaced-rep level as a dot in the corner
+              // next to the type badge (inside the shell), not in the action gutter.
+              const meta = !editMode && entry.kind === "card"
+                ? <LevelDot level={itemProgress[`card:${entry.id}`]?.level} nextReviewAt={itemProgress[`card:${entry.id}`]?.next_review_at} />
+                : undefined;
               const type = entry.kind === "card" ? "Card" : entry.kind === "quiz" ? "Quiz" : entry.ex.Kind;
               const body = entry.kind === "card" ? (
                 <div className="flex items-start gap-3 min-w-0">
@@ -1162,11 +1212,11 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
                 <div className="min-w-0">
                   {!showAnswer && <p className="font-medium text-gray-900 dark:text-slate-100">{entry.quiz.Question}</p>}
                   <div className={`grid transition-[grid-template-rows] duration-200 ease-out ${showAnswer ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
-                    <div className="overflow-hidden">{quizEx && <ExerciseBody ex={quizEx} saved={savedResults ?? {}} />}</div>
+                    <div className="overflow-hidden">{quizEx && <ExerciseBody key={`${entry.id}:${viewNonce}`} ex={quizEx} saved={savedResults ?? {}} />}</div>
                   </div>
                 </div>
               ) : (
-                <ExerciseBody ex={entry.ex} saved={savedResults ?? {}} />
+                <ExerciseBody key={`${entry.id}:${viewNonce}`} ex={entry.ex} saved={savedResults ?? {}} />
               );
               const dragEnabled = editMode && !entry.del;
               // Show the dashed insertion line only where a real move would happen
@@ -1202,7 +1252,7 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
                   className={`${dragEnabled ? "cursor-move" : ""} ${draggingId === entry.id ? "opacity-40" : ""}`}
                 >
                   {showLine("before") && line}
-                  <ItemShell type={type} tint={rowTint(entry.id, entry.del)} onClick={collapsible ? () => toggleExpand(entry.id) : undefined} actions={trailing}>
+                  <ItemShell type={type} tint={rowTint(entry.id, entry.del)} meta={meta} onClick={collapsible ? () => toggleExpand(entry.id) : undefined} actions={trailing}>
                     {body}
                   </ItemShell>
                   {showLine("after") && line}
