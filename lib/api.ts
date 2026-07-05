@@ -32,6 +32,7 @@ export type Collection = {
   Cards: Card[] | null;
   TestQuestions: TestQuestion[] | null;
   Exercises: Exercise[] | null;
+  Items?: Item[] | null; // raw unified items (with Rank) — used by the editor for ordering
   CreatedAt: string;
   UpdatedAt: string;
 };
@@ -227,6 +228,9 @@ export const api = {
       request<void>(`/collections/${collectionID}/draft/items/${itemID}`, { method: "DELETE" }),
     revertItem: (collectionID: string, itemID: string) =>
       request<void>(`/collections/${collectionID}/draft/items/${itemID}/revert`, { method: "POST" }),
+    // Reorder: place the item between two neighbors (either "" for a list end).
+    moveItem: (collectionID: string, itemID: string, afterID: string, beforeID: string) =>
+      request<void>(`/collections/${collectionID}/draft/items/${itemID}/move`, { method: "POST", body: JSON.stringify({ after_id: afterID, before_id: beforeID }) }),
   },
   follows: {
     follow: (collectionID: string) =>
@@ -325,6 +329,16 @@ export const api = {
     // Clear the user's own answers for one exercise (retake).
     resetExercise: (collectionID: string, exID: string) =>
       request<void>(`/collections/${collectionID}/exercises/${exID}/progress`, { method: "DELETE" }),
+  },
+  // Unified import: a JSON (or YAML) list of items each tagged with `type`
+  // (card | quiz | exercise). draft=true stages into the draft.
+  import: {
+    items: (collectionID: string, text: string, draft = false) =>
+      request<{ imported: number; skipped: number }>(`/collections/${collectionID}/import${draft ? "?draft=true" : ""}`, {
+        method: "POST",
+        body: text,
+        headers: { "Content-Type": "application/json" },
+      }),
   },
   blitz: {
     get: (collectionID: string) =>

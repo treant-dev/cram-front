@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type TouchEvent as ReactTouchEvent } from 
 import { Exercise, BankExercise, ChoiceExercise, QuizExercise, api } from "@/lib/api";
 import { segments, isCorrect, bankPool, gapOptions } from "@/lib/exercises";
 import OptionButton from "@/components/OptionButton";
+import { ConfirmDialog } from "@/components/Modal";
 
 type SentenceResult = { id: string; correct: boolean; submitted: string[] };
 type Nav = { isFirst: boolean; isLast: boolean; onPrev: () => void; onNext: () => void };
@@ -16,6 +17,8 @@ type BlockProps<E extends Exercise> = {
   single?: boolean;   // stepper layout (prev/next) on all screens
   active?: boolean;   // this block is the currently-shown one (for keyboard shortcuts)
   readOnly?: boolean; // review display: no actions, no interaction
+  tint?: string;      // status-tinted card classes (edit mode); default neutral card
+  bare?: boolean;     // render only the interior (no card wrapper) — for embedding in ItemShell
 };
 
 function shuffle<T>(arr: T[]): T[] {
@@ -27,7 +30,10 @@ function shuffle<T>(arr: T[]): T[] {
   return a;
 }
 
-const card = "bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-2xl p-6 shadow-sm";
+const cardBase = "rounded-2xl p-6 shadow-sm";
+const card = `bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 ${cardBase}`;
+// cardCls picks the neutral card or a status-tinted one (same border+bg as card/quiz rows).
+const cardCls = (tint?: string) => (tint ? `${cardBase} ${tint}` : card);
 // matches the blitz/cards Confirm button (StudySession)
 const confirmBtn =
   "border border-indigo-400 dark:border-indigo-600 text-indigo-600 dark:text-indigo-400 px-5 py-2 rounded-xl font-medium hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-colors";
@@ -62,8 +68,8 @@ function slotColor(state: "empty" | "filled" | "correct" | "wrong"): string {
 //     their role (right = forward action, centre = secondary), so nothing jumps.
 //   Desktop (all blocks visible, no nav): a single centred action that swaps Confirm↔Reset
 //     in place — a lone button reads best centred (no left hint to balance it like blitz).
-function BlockActions({ checked, onConfirm, onReset, nav, single }: {
-  checked: boolean; onConfirm: () => void; onReset: () => void; nav: Nav; single?: boolean;
+function BlockActions({ checked, onConfirm, onReset, onSkip, nav, single }: {
+  checked: boolean; onConfirm: () => void; onReset: () => void; onSkip?: () => void; nav: Nav; single?: boolean;
 }) {
   return (
     <>
@@ -75,7 +81,7 @@ function BlockActions({ checked, onConfirm, onReset, nav, single }: {
         <div className="justify-self-center">
           {checked
             ? <button type="button" onClick={onReset} className={resetBtn}>Reset</button>
-            : (!nav.isLast && <button type="button" onClick={nav.onNext} className={navBtn}>Skip</button>)}
+            : (!nav.isLast && <button type="button" onClick={onSkip ?? nav.onNext} className={navBtn}>Skip</button>)}
         </div>
         <div className="justify-self-end">
           {checked
@@ -97,7 +103,7 @@ function BlockActions({ checked, onConfirm, onReset, nav, single }: {
 // ── bank: shared shuffled word pool, drag-and-drop (or tap) into blanks ────────
 type PoolWord = { id: string; word: string };
 
-function BankBlock({ ex, saved, onCheck, onReset, nav, single, readOnly }: BlockProps<BankExercise>) {
+function BankBlock({ ex, saved, onCheck, onReset, nav, single, readOnly, tint, bare }: BlockProps<BankExercise>) {
   const [poolWords] = useState<PoolWord[]>(() =>
     shuffle(bankPool(ex).map((word, i) => ({ id: `p${i}`, word })))
   );
@@ -156,13 +162,13 @@ function BankBlock({ ex, saved, onCheck, onReset, nav, single, readOnly }: Block
 
   return (
     <>
-      <section className={`${card}${readOnly ? " pointer-events-none" : ""}`}>
-        <div className="flex flex-col gap-4">
+      <section className={`${bare ? "" : cardCls(tint)}${readOnly ? " pointer-events-none" : ""}`}>
+        <div className="flex flex-col gap-3">
           {!checked && (
             <div
               onDragOver={(e) => e.preventDefault()}
               onDrop={() => { const d = dragRef.current; if (d?.from) clearBlank(d.from); dragRef.current = null; }}
-              className="flex flex-wrap gap-2 min-h-[2.25rem] p-1 rounded-lg bg-gray-50 dark:bg-slate-800/50"
+              className="flex flex-wrap gap-1.5"
             >
               {available.map((p) => (
                 <button
@@ -171,12 +177,12 @@ function BankBlock({ ex, saved, onCheck, onReset, nav, single, readOnly }: Block
                   draggable
                   onDragStart={() => { dragRef.current = { id: p.id }; }}
                   onClick={() => tapWord(p.id)}
-                  className="text-sm px-2.5 py-1 rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-800 dark:text-slate-200 hover:border-indigo-300 dark:hover:border-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 cursor-grab active:cursor-grabbing"
+                  className="text-xs rounded px-2 py-0.5 bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 cursor-grab active:cursor-grabbing"
                 >
                   {p.word}
                 </button>
               ))}
-              {available.length === 0 && <span className="text-xs text-gray-400 dark:text-slate-500 px-1 self-center">all words placed</span>}
+              {available.length === 0 && <span className="text-xs text-gray-400 dark:text-slate-500 self-center">all words placed</span>}
             </div>
           )}
 
@@ -232,7 +238,7 @@ function BankBlock({ ex, saved, onCheck, onReset, nav, single, readOnly }: Block
 }
 
 // ── choice: an inline dropdown per gap ────────────────────────────────────────
-function ChoiceBlock({ ex, saved, onCheck, onReset, nav, single, readOnly }: BlockProps<ChoiceExercise>) {
+function ChoiceBlock({ ex, saved, onCheck, onReset, nav, single, readOnly, tint, bare }: BlockProps<ChoiceExercise>) {
   const [opts] = useState<Record<string, string[][]>>(() =>
     Object.fromEntries(ex.Sentences.map((s) => [s.id, gapOptions(s).map((g) => shuffle(g))]))
   );
@@ -252,7 +258,7 @@ function ChoiceBlock({ ex, saved, onCheck, onReset, nav, single, readOnly }: Blo
 
   return (
     <>
-      <section className={`${card}${readOnly ? " pointer-events-none" : ""}`}>
+      <section className={`${bare ? "" : cardCls(tint)}${readOnly ? " pointer-events-none" : ""}`}>
         <div className="flex flex-col gap-3">
           {ex.Sentences.map((s) => {
             const parts = segments(s.text);
@@ -298,7 +304,7 @@ function ChoiceBlock({ ex, saved, onCheck, onReset, nav, single, readOnly }: Blo
 }
 
 // ── quiz: a multiple-choice question (former "test"), answered in place ─────────
-function QuizBlock({ ex, saved, onCheck, onReset, nav, single, active, readOnly }: BlockProps<QuizExercise>) {
+function QuizBlock({ ex, saved, onCheck, onReset, nav, single, active, readOnly, tint, bare }: BlockProps<QuizExercise>) {
   const options = ex.Options ?? [];
   const multi = options.filter((o) => o.is_correct).length > 1;
   const savedSel = saved[ex.ID];
@@ -308,6 +314,7 @@ function QuizBlock({ ex, saved, onCheck, onReset, nav, single, active, readOnly 
     return s;
   });
   const [checked, setChecked] = useState(() => !!savedSel);
+  const [confirmSkip, setConfirmSkip] = useState(false);
 
   function toggle(i: number) {
     if (checked || readOnly) return;
@@ -324,15 +331,20 @@ function QuizBlock({ ex, saved, onCheck, onReset, nav, single, active, readOnly 
     setChecked(true);
     onCheck([{ id: ex.ID, correct: correct(), submitted: [...sel].map((i) => options[i].text) }]);
   }
+  function resetNow() { onReset(); setChecked(false); setSel(new Set()); }
+  function skip() { if (!nav.isLast) nav.onNext(); }
 
-  // Keyboard (active block): 1..N pick an option; Enter confirms, then advances.
+  // Keyboard (active block): 1..N pick; Backspace resets; Enter confirms (or, with no
+  // selection, asks to skip). While the skip dialog is open it owns the keyboard.
   useEffect(() => {
-    if (!active || readOnly) return;
+    if (!active || readOnly || confirmSkip) return;
     const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Backspace") { e.preventDefault(); resetNow(); return; }
       if (e.key === "Enter") {
         e.preventDefault();
-        if (!checked) confirmNow();
-        else if (!nav.isLast) nav.onNext();
+        if (checked) { if (!nav.isLast) nav.onNext(); }
+        else if (sel.size > 0) confirmNow();
+        else setConfirmSkip(true);
         return;
       }
       if (checked) return;
@@ -350,10 +362,10 @@ function QuizBlock({ ex, saved, onCheck, onReset, nav, single, active, readOnly 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, checked, multi, sel, nav]);
+  }, [active, checked, multi, sel, nav, confirmSkip]);
 
   return (
-    <div className={card}>
+    <div className={bare ? "" : cardCls(tint)}>
       <p className="font-medium text-gray-800 dark:text-slate-200 mb-1">{ex.Question}</p>
       <p className="text-xs text-gray-400 dark:text-slate-500 mb-4">{multi ? "Select all that apply" : "Select one"}</p>
       <div className="flex flex-col gap-2 pl-6">
@@ -376,23 +388,53 @@ function QuizBlock({ ex, saved, onCheck, onReset, nav, single, active, readOnly 
         <BlockActions
           checked={checked}
           onConfirm={confirmNow}
-          onReset={() => { onReset(); setChecked(false); setSel(new Set()); }}
+          onReset={resetNow}
+          onSkip={() => setConfirmSkip(true)}
           nav={nav}
           single={single}
+        />
+      )}
+      {confirmSkip && (
+        <ConfirmDialog
+          message="Skip without answering?"
+          confirmLabel="Skip"
+          onConfirm={() => { setConfirmSkip(false); skip(); }}
+          onCancel={() => setConfirmSkip(false)}
         />
       )}
     </div>
   );
 }
 
-export default function ExerciseWorksheet({ exercises, collectionID, saved, single, readOnly }: {
+// Edit overlay: per-exercise draft status tint + a Delete/Revert control. When set,
+// the worksheet renders read-only (same look as the main-page review).
+type EditControls = {
+  statusOf: (id: string) => "added" | "changed" | "deleted" | undefined;
+  onDelete: (id: string) => void;
+  onRestore: (id: string) => void;
+};
+
+// ExerciseBody renders just the interior of one exercise (read-only, no card wrapper,
+// no actions) — for embedding inside the unified ItemShell in edit mode.
+export function ExerciseBody({ ex, saved }: { ex: Exercise; saved: Record<string, string[]> }) {
+  const noop = () => {};
+  const nav: Nav = { isFirst: true, isLast: true, onPrev: noop, onNext: noop };
+  const common = { ex, saved, onCheck: noop, onReset: noop, nav, readOnly: true, bare: true } as const;
+  if (ex.Kind === "bank") return <BankBlock {...common} ex={ex} />;
+  if (ex.Kind === "quiz") return <QuizBlock {...common} ex={ex} />;
+  return <ChoiceBlock {...common} ex={ex} />;
+}
+
+export default function ExerciseWorksheet({ exercises, collectionID, saved, single, readOnly, edit }: {
   exercises: Exercise[];
   collectionID: string;
   saved: Record<string, string[]>;
   single?: boolean;   // one exercise at a time on all screens (blitz-style), with prev/next nav
   readOnly?: boolean; // review display: show saved answers, no actions/interaction (collection page)
+  edit?: EditControls; // edit-mode overlay (implies read-only display)
 }) {
   const [current, setCurrent] = useState(0);
+  const ro = readOnly || !!edit;
 
   function record(results: SentenceResult[]) {
     api.exercises
@@ -430,7 +472,14 @@ export default function ExerciseWorksheet({ exercises, collectionID, saved, sing
 
   return (
     <div className="flex flex-col gap-8" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
-      {exercises.map((ex, i) => (
+      {exercises.map((ex, i) => {
+        const status = edit?.statusOf(ex.ID);
+        const tint =
+          status === "added" ? "border border-green-300 dark:border-green-700 bg-green-50/50 dark:bg-green-900/10"
+          : status === "changed" ? "border border-amber-300 dark:border-amber-700 bg-amber-50/50 dark:bg-amber-900/10"
+          : status === "deleted" ? "border border-red-300 dark:border-red-700 bg-red-50/50 dark:bg-red-900/10"
+          : undefined;
+        return (
         <div key={ex.ID} className={single ? (i === current ? "block" : "hidden") : "block"}>
           {/* header sits outside the card, like the counter/badge in blitz */}
           <div className="flex items-center justify-between gap-2 mb-2 px-1">
@@ -438,17 +487,23 @@ export default function ExerciseWorksheet({ exercises, collectionID, saved, sing
               <span className="text-sm text-gray-400 dark:text-slate-500 shrink-0">{i + 1} / {exercises.length}</span>
               {ex.Title && <h3 className="font-semibold text-gray-700 dark:text-slate-300 truncate">{ex.Title}</h3>}
             </div>
-            <span className={`text-xs font-medium px-2 py-0.5 rounded-full shrink-0 capitalize ${kindBadge[ex.Kind] ?? "bg-gray-100 text-gray-500 dark:bg-slate-800 dark:text-slate-400"}`}>
-              {ex.Kind}
-            </span>
+            <div className="flex items-center gap-2 shrink-0">
+              <span className={`text-xs font-medium px-2 py-0.5 rounded-full capitalize ${kindBadge[ex.Kind] ?? "bg-gray-100 text-gray-500 dark:bg-slate-800 dark:text-slate-400"}`}>
+                {ex.Kind}
+              </span>
+              {edit && (status === "deleted"
+                ? <button onClick={() => edit.onRestore(ex.ID)} className="text-sm text-indigo-500 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300">Revert</button>
+                : <button onClick={() => edit.onDelete(ex.ID)} className="text-sm text-red-400 hover:text-red-600 dark:hover:text-red-300">Delete</button>)}
+            </div>
           </div>
           {ex.Kind === "bank"
-            ? <BankBlock ex={ex} saved={saved} onCheck={record} onReset={() => reset(ex.ID)} nav={nav(i)} single={single} active={i === current} readOnly={readOnly} />
+            ? <BankBlock ex={ex} saved={saved} onCheck={record} onReset={() => reset(ex.ID)} nav={nav(i)} single={single} active={i === current} readOnly={ro} tint={tint} />
             : ex.Kind === "quiz"
-            ? <QuizBlock ex={ex} saved={saved} onCheck={record} onReset={() => reset(ex.ID)} nav={nav(i)} single={single} active={i === current} readOnly={readOnly} />
-            : <ChoiceBlock ex={ex} saved={saved} onCheck={record} onReset={() => reset(ex.ID)} nav={nav(i)} single={single} active={i === current} readOnly={readOnly} />}
+            ? <QuizBlock ex={ex} saved={saved} onCheck={record} onReset={() => reset(ex.ID)} nav={nav(i)} single={single} active={i === current} readOnly={ro} tint={tint} />
+            : <ChoiceBlock ex={ex} saved={saved} onCheck={record} onReset={() => reset(ex.ID)} nav={nav(i)} single={single} active={i === current} readOnly={ro} tint={tint} />}
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

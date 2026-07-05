@@ -32,8 +32,9 @@ test("quizzes (former tests) are exercises, done via the Exercise session", asyn
   await expect(exercise).toBeVisible({ timeout: 30_000 });
   await exercise.click();
   await page.waitForURL(/\/exercises$/);
-  // The quiz question renders in the exercise session as a QuizBlock.
-  await expect(page.getByText("Which of the following declares a variable in Go?").first()).toBeVisible();
+  // The quiz renders as a QuizBlock in the session. It's a stepper (one block at a time),
+  // so the quiz may not be the current slot — assert it's rendered, not necessarily shown.
+  await expect(page.getByText("Which of the following declares a variable in Go?").first()).toBeAttached({ timeout: 30_000 });
 });
 
 test("import panel offers JSON/YAML only — no CSV", async ({ page }) => {
@@ -42,29 +43,62 @@ test("import panel offers JSON/YAML only — no CSV", async ({ page }) => {
   await page.getByText("Private Notes").first().click();
   await page.waitForURL(/\/collections\/[0-9a-f-]+$/);
 
-  // Enter edit mode (pulls the draft), then open the import panel.
-  const edit = page.getByRole("button", { name: /edit/i });
-  if (await edit.count()) await edit.first().click();
+  // Enter edit mode (pulls the draft), then open the import panel. Wait for the button
+  // to render — the page shows a skeleton until the collection + answers load.
+  const edit = page.getByRole("button", { name: /edit/i }).or(page.getByRole("button", { name: /continue editing/i }));
+  await expect(edit.first()).toBeVisible({ timeout: 30_000 });
+  await edit.first().click();
 
   const importBtn = page.getByRole("button", { name: /import/i }).first();
   await expect(importBtn).toBeVisible({ timeout: 30_000 });
   await importBtn.click();
 
-  await expect(page.getByText(/JSON or YAML list/i).first()).toBeVisible();
+  // Unified import panel — JSON (YAML accepted silently); no CSV.
+  await expect(page.getByText(/Import items \(JSON\)/i).first()).toBeVisible();
   await expect(page.getByText("term;definition")).toHaveCount(0);
 });
 
-test("edit mode lists exercises with Reset/Delete (no crash on quiz)", async ({ page }) => {
+test("edit mode lists items with per-item Edit/Delete actions (no crash on quiz)", async ({ page }) => {
   test.setTimeout(60_000);
   await login(page);
   await page.getByText("Go Basics").first().click();
   await page.waitForURL(/\/collections\/[0-9a-f-]+$/);
-  const edit = page.getByRole("button", { name: /^edit$/i });
-  await expect(edit).toBeVisible({ timeout: 30_000 });
-  await edit.click();
-  // ExerciseEditList renders per-exercise Delete (quiz has null Sentences — must not crash).
-  await expect(page.getByRole("button", { name: /^delete$/i }).first()).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByRole("button", { name: /^reset$/i }).first()).toBeVisible();
+  // "Edit" enters draft mode. (Button may read "Continue editing" if a draft exists.)
+  const edit = page.getByRole("button", { name: /^edit$/i }).or(page.getByRole("button", { name: /continue editing/i }));
+  await expect(edit.first()).toBeVisible({ timeout: 30_000 });
+  await edit.first().click();
+  // Each item renders emoji action buttons whose accessible name is their aria-label.
+  // Quiz items carry null Sentences — the unified list must render them without crashing.
+  await expect(page.getByRole("button", { name: "Delete" }).first()).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole("button", { name: "Edit" }).first()).toBeVisible();
+});
+
+test("live collection page restores a previously recorded quiz answer", async ({ page }) => {
+  test.setTimeout(60_000);
+  await login(page);
+  // Locate Go Basics + its quiz via the API (the browser context carries the jwt cookie).
+  const cols = await (await page.request.get(`${API}/collections`)).json();
+  const go = (cols as Array<{ ID: string; Title: string }>).find((c) => c.Title === "Go Basics");
+  expect(go, "seed collection present").toBeTruthy();
+  const detail = await (await page.request.get(`${API}/collections/${go!.ID}`)).json();
+  const quiz = (detail.Exercises ?? []).find((e: { Kind: string }) => e.Kind === "quiz");
+  expect(quiz, "seed quiz present").toBeTruthy();
+  const correct = quiz.Options.find((o: { is_correct: boolean }) => o.is_correct);
+
+  // Record the user's (correct) answer for this quiz, as the Exercise session would.
+  const rec = await page.request.post(`${API}/collections/${go!.ID}/exercises/results`, {
+    data: { results: [{ sentence_id: quiz.ID, correct: true, submitted: [correct.text] }] },
+  });
+  expect(rec.ok()).toBeTruthy();
+
+  // Open the live collection page and reveal the quiz — the answered state must be
+  // restored on first render (regression: saved answers weren't shown on the live page).
+  await page.goto(`/collections/${go!.ID}`);
+  const question = page.getByText(quiz.Question).first();
+  await expect(question).toBeVisible({ timeout: 30_000 });
+  await question.click(); // tap to expand
+  const option = page.getByRole("button", { name: correct.text }).first();
+  await expect(option).toHaveClass(/green/, { timeout: 10_000 });
 });
 
 test("blitz session loads a card question", async ({ page }) => {
