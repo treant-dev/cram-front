@@ -221,9 +221,11 @@ test("Match game: enabled with ≥5 cards, board renders and tiles flip", async 
   const expectedTiles = 2 * Math.min(cardCount, 10);
 
   await page.goto(`/collections/${go!.ID}`);
-  const matchLink = page.getByRole("link", { name: "Match" });
-  await expect(matchLink).toBeVisible({ timeout: 30_000 });
-  await matchLink.click();
+  // Match lives in the 🎮 games menu now.
+  const gamesBtn = page.getByRole("button", { name: "Mini games" });
+  await expect(gamesBtn).toBeVisible({ timeout: 30_000 });
+  await gamesBtn.click();
+  await page.getByRole("button", { name: /Match/ }).click();
   await page.waitForURL(/\/match$/);
 
   const tiles = page.getByTestId("match-tile");
@@ -236,6 +238,27 @@ test("Match game: enabled with ≥5 cards, board renders and tiles flip", async 
   await expect(first).toHaveAttribute("data-facing", "up");
 });
 
+test("Match game: only one tile per side can be face-up (no same-side pair)", async ({ page }) => {
+  test.setTimeout(60_000);
+  await login(page);
+  const cols = await (await page.request.get(`${API}/collections`)).json();
+  const go = (cols as Array<{ ID: string; Title: string }>).find((c) => c.Title === "Go Basics");
+  expect(go, "seed collection present").toBeTruthy();
+
+  await page.goto(`/collections/${go!.ID}/match`);
+  const side = page.getByTestId("match-side").first();
+  const sideTiles = side.getByTestId("match-tile");
+  await expect(sideTiles.first()).toBeVisible({ timeout: 30_000 });
+
+  // Click two tiles on the SAME side — the selection moves, it does not form a pair.
+  await sideTiles.nth(0).click();
+  await sideTiles.nth(1).click();
+
+  // Exactly one tile on this side is face-up, and no move was counted.
+  await expect(side.locator('[data-testid="match-tile"][data-facing="up"]')).toHaveCount(1);
+  await expect(page.getByText("0 moves")).toBeVisible();
+});
+
 test("Match game: inactive when a collection has fewer than 5 cards", async ({ page }) => {
   test.setTimeout(60_000);
   await login(page);
@@ -246,9 +269,35 @@ test("Match game: inactive when a collection has fewer than 5 cards", async ({ p
   expect((detail.Cards ?? []).length, "Private Notes should have <5 cards").toBeLessThan(5);
 
   await page.goto(`/collections/${pn!.ID}`);
-  // Match is shown but inactive — rendered as plain text, not a link.
-  await expect(page.getByText("Match", { exact: true })).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByRole("link", { name: "Match" })).toHaveCount(0);
+  // The 🎮 games menu is shown but inactive — rendered as plain text, not a button.
+  await expect(page.getByText("🎮")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole("button", { name: "Mini games" })).toHaveCount(0);
+});
+
+test("Connect game: link matching pairs via the 🎮 menu, Check reports all correct", async ({ page }) => {
+  test.setTimeout(60_000);
+  await login(page);
+  const cols = await (await page.request.get(`${API}/collections`)).json();
+  const go = (cols as Array<{ ID: string; Title: string }>).find((c) => c.Title === "Go Basics");
+  expect(go, "seed collection present").toBeTruthy();
+  const detail = await (await page.request.get(`${API}/collections/${go!.ID}`)).json();
+  const cards = (detail.Cards ?? []) as Array<{ Term: string; Definition: string }>;
+  expect(cards.length, "Go Basics ≤7 cards so all show on the board").toBeGreaterThanOrEqual(2);
+  expect(cards.length).toBeLessThanOrEqual(7);
+
+  await page.goto(`/collections/${go!.ID}`);
+  await page.getByRole("button", { name: "Mini games" }).click();
+  await page.getByRole("button", { name: /Connect/ }).click();
+  await page.waitForURL(/\/connect$/);
+  await expect(page.getByTestId("connect-term")).toHaveCount(cards.length, { timeout: 30_000 });
+
+  // Link each card's term to its definition (both are visible on the board).
+  for (const c of cards) {
+    await page.getByTestId("connect-term").filter({ hasText: c.Term }).first().click();
+    await page.getByTestId("connect-def").filter({ hasText: c.Definition }).first().click();
+  }
+  await page.getByRole("button", { name: "Check" }).click();
+  await expect(page.getByText(`${cards.length} / ${cards.length} correct`)).toBeVisible({ timeout: 10_000 });
 });
 
 test("blitz session loads a card question", async ({ page }) => {

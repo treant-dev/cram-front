@@ -62,6 +62,55 @@ function IconBtn({ emoji, title, onClick, danger, type = "button", form, disable
   );
 }
 
+// Mini-games playable over a collection's cards. Add new ones here — they show up
+// in the 🎮 menu and in the 🎲 Random pick automatically.
+const MINI_GAMES: { emoji: string; label: string; slug: string }[] = [
+  { emoji: "🃏", label: "Match", slug: "match" },
+  { emoji: "🔗", label: "Connect", slug: "connect" },
+];
+
+// 🎮 menu next to Blitz: pick a mini-game (🎲 Random first). Disabled when the
+// collection has too few cards to play.
+function GamesMenu({ collectionID, disabled }: { collectionID: string; disabled?: boolean }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    function onDoc(e: MouseEvent) { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); }
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  const go = (slug: string) => { setOpen(false); router.push(`/collections/${collectionID}/${slug}`); };
+  const random = () => go(MINI_GAMES[Math.floor(Math.random() * MINI_GAMES.length)].slug);
+  const itemCls = "w-full text-left px-3 py-1.5 text-sm text-gray-700 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-800";
+
+  if (disabled) {
+    return <span title="Needs at least 5 cards" className="px-4 py-2 rounded-lg text-sm border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-400 dark:text-slate-600 cursor-not-allowed">🎮</span>;
+  }
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        title="Mini games"
+        aria-label="Mini games"
+        className="px-4 py-2 rounded-lg text-sm font-medium border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors"
+      >
+        🎮
+      </button>
+      {open && (
+        <div className="absolute z-20 mt-1 left-0 min-w-[10rem] rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-lg py-1">
+          <button onClick={random} className={itemCls}>🎲 Random</button>
+          {MINI_GAMES.map((g) => (
+            <button key={g.slug} onClick={() => go(g.slug)} className={itemCls}>{g.emoji} {g.label}</button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Form fields box (used inside CardForm/TestForm; Save/Cancel live in a side panel).
 const formBox = "bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl p-4 flex flex-col gap-3 flex-1 min-w-0";
 
@@ -1068,15 +1117,9 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
                 </Link>
               )
             )}
+            {cards.length >= 1 && <GamesMenu collectionID={collection.ID} disabled={!hasMatch} />}
             {hasFlip && (
               <Link href={`/collections/${collection.ID}/cards`} className="bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors">Cards</Link>
-            )}
-            {cards.length >= 1 && (
-              hasMatch ? (
-                <Link href={`/collections/${collection.ID}/match`} className="bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors">Match</Link>
-              ) : (
-                <span title="Needs at least 5 cards" className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-400 dark:text-slate-600 px-4 py-2 rounded-lg text-sm font-medium cursor-not-allowed">Match</span>
-              )
             )}
             {hasExercises && (
               <Link href={`/collections/${collection.ID}/exercises`} className="bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors">Exercise</Link>

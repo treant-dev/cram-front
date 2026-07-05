@@ -7,7 +7,7 @@ import { isLoggedIn } from "@/lib/auth";
 import Navbar from "@/components/Navbar";
 import { buildMatchBoard, type MatchTile } from "@/lib/match";
 
-const MISMATCH_MS = 900; // how long a mismatched pair stays revealed before flipping back
+const MISMATCH_MS = 1200; // how long a mismatched pair stays revealed before flipping back
 
 export default function MatchPage(props: PageProps<"/collections/[id]/match">) {
   const [collectionID, setCollectionID] = useState("");
@@ -19,7 +19,7 @@ export default function MatchPage(props: PageProps<"/collections/[id]/match">) {
   const [matched, setMatched] = useState<Set<string>>(new Set());
   const [moves, setMoves] = useState(0);
   const [lock, setLock] = useState(false);                // input frozen during a mismatch reveal
-  const [termsOnLeft, setTermsOnLeft] = useState(true);   // which side holds the terms (randomized per game)
+  const [wrong, setWrong] = useState<Set<string>>(new Set()); // the two tiles of a wrong pair (blink red)
 
   useEffect(() => {
     props.params.then(({ id }) => {
@@ -29,16 +29,15 @@ export default function MatchPage(props: PageProps<"/collections/[id]/match">) {
       const cs = c.Cards ?? [];
       setCards(cs);
       setTiles(buildMatchBoard(cs));
-      setTermsOnLeft(Math.random() < 0.5);
     }).catch(() => setError("Failed to load cards"));
   }, [props.params]);
 
   const restart = useCallback(() => {
     if (!cards) return;
     setTiles(buildMatchBoard(cards));
-    setTermsOnLeft(Math.random() < 0.5);
     setFlipped([]);
     setMatched(new Set());
+    setWrong(new Set());
     setMoves(0);
     setLock(false);
   }, [cards]);
@@ -47,16 +46,18 @@ export default function MatchPage(props: PageProps<"/collections/[id]/match">) {
   const matchedPairs = matched.size / 2;
   const solved = tiles.length > 0 && matched.size === tiles.length;
 
-  // Terms on one side, definitions on the other; which side is randomized per game.
-  const termTiles = tiles.filter((t) => t.side === "term");
-  const defTiles = tiles.filter((t) => t.side === "definition");
-  const leftTiles = termsOnLeft ? termTiles : defTiles;
-  const rightTiles = termsOnLeft ? defTiles : termTiles;
-  const leftLabel = termsOnLeft ? "Terms" : "Definitions";
-  const rightLabel = termsOnLeft ? "Definitions" : "Terms";
+  // Terms always on the left, definitions on the right.
+  const leftTiles = tiles.filter((t) => t.side === "term");
+  const rightTiles = tiles.filter((t) => t.side === "definition");
+  const leftLabel = "Terms";
+  const rightLabel = "Definitions";
 
   function onTile(id: string) {
     if (lock || matched.has(id) || flipped.includes(id)) return;
+    const tile = tiles.find((t) => t.id === id)!;
+    // Once a tile on a side is open, that side is locked — the next pick must come
+    // from the other side. A pair is only evaluated with one tile from each side.
+    if (flipped.some((fid) => tiles.find((t) => t.id === fid)!.side === tile.side)) return;
     const next = [...flipped, id];
     setFlipped(next);
     if (next.length < 2) return;
@@ -68,13 +69,15 @@ export default function MatchPage(props: PageProps<"/collections/[id]/match">) {
       setFlipped([]);
     } else {
       setLock(true);
-      setTimeout(() => { setFlipped([]); setLock(false); }, MISMATCH_MS);
+      setWrong(new Set([a.id, b.id]));
+      setTimeout(() => { setFlipped([]); setWrong(new Set()); setLock(false); }, MISMATCH_MS);
     }
   }
 
   const renderTile = (t: MatchTile) => {
     const isMatched = matched.has(t.id);
-    const isUp = isMatched || flipped.includes(t.id);
+    const isWrong = wrong.has(t.id);
+    const isUp = isMatched || isWrong || flipped.includes(t.id);
     return (
       <button
         key={t.id}
@@ -87,6 +90,8 @@ export default function MatchPage(props: PageProps<"/collections/[id]/match">) {
         className={`min-h-24 sm:min-h-28 rounded-xl border p-2 text-center flex items-center justify-center transition-colors select-none ${
           isMatched
             ? "border-green-300 dark:border-green-700 bg-green-50 dark:bg-green-900/20 opacity-50 cursor-default"
+            : isWrong
+            ? "border-red-400 bg-white dark:bg-slate-900 match-wrong"
             : isUp
             ? "border-indigo-300 dark:border-indigo-700 bg-indigo-50 dark:bg-indigo-900/20"
             : "border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:border-indigo-300 dark:hover:border-indigo-600 hover:bg-gray-50 dark:hover:bg-slate-800 cursor-pointer"
@@ -169,12 +174,12 @@ export default function MatchPage(props: PageProps<"/collections/[id]/match">) {
 
         {/* Two halves split by a vertical divider: terms one side, definitions the other. */}
         <div className="flex items-stretch gap-3 sm:gap-5">
-          <div className="flex-1 min-w-0">
+          <div className="flex-1 min-w-0" data-testid="match-side">
             <p className="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-slate-500 mb-2 text-center">{leftLabel}</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">{leftTiles.map(renderTile)}</div>
           </div>
           <div className="w-px bg-gray-200 dark:bg-slate-700 self-stretch" />
-          <div className="flex-1 min-w-0">
+          <div className="flex-1 min-w-0" data-testid="match-side">
             <p className="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-slate-500 mb-2 text-center">{rightLabel}</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">{rightTiles.map(renderTile)}</div>
           </div>
