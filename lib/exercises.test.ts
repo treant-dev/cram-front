@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { segments, blankCount, comboEq, isCorrect, bankPool, gapOptions } from "./exercises";
+import { segments, blankCount, comboEq, isCorrect, isAnswered, bankPool, gapOptions } from "./exercises";
 import type { BankExercise, ExerciseSentence } from "./api";
 
 function sentence(s: Partial<ExerciseSentence>): ExerciseSentence {
@@ -26,6 +26,19 @@ describe("comboEq / isCorrect", () => {
     expect(isCorrect(["geht", "Hause"], ["geht", "Hause"])).toBe(true);
     expect(isCorrect(["geht", "Hause"], ["geht", "Schule"])).toBe(false);
     expect(isCorrect(["are"], [""])).toBe(false);
+  });
+});
+
+describe("isAnswered", () => {
+  it("true only when at least one non-blank word was submitted", () => {
+    expect(isAnswered(["go"])).toBe(true);
+    expect(isAnswered(["", "defer"])).toBe(true);
+  });
+  it("false for skipped / empty submissions (must not lock the block as checked)", () => {
+    expect(isAnswered(undefined)).toBe(false);
+    expect(isAnswered([])).toBe(false);
+    expect(isAnswered([""])).toBe(false);
+    expect(isAnswered(["", "  "])).toBe(false);
   });
 });
 

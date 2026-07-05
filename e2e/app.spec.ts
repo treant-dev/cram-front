@@ -4,10 +4,34 @@ const API = "http://localhost:8080";
 
 // dev-login sets the jwt cookie on :8080 and redirects to the frontend callback,
 // which flags the session and lands on /collections.
+// The session is authenticated once in global-setup and reused via storageState,
+// so this just lands on /collections (no per-test dev-login — the backend rate-limits it).
 async function login(page: import("@playwright/test").Page) {
-  await page.goto(`${API}/auth/dev-login`);
+  await page.goto(`/collections`);
   await page.waitForURL(/\/collections/, { timeout: 15_000 });
 }
+
+// Test markers for items created by the import test — used for cleanup so runs don't
+// accumulate cards/quizzes in the shared seed collection.
+const E2E_CARD_TERM = "e2e-import-term";
+const E2E_QUIZ_QUESTION = "e2e quiz?";
+
+// After every test, delete any items the suite created (identified by their markers)
+// from Go Basics. Idempotent: no-op when there's nothing to clean, and it also mops
+// up leftovers from earlier interrupted runs.
+test.afterEach(async ({ request }) => {
+  // request inherits the shared storageState (jwt cookie) — no extra login needed.
+  const cols = await (await request.get(`${API}/collections`)).json();
+  const go = (cols as Array<{ ID: string; Title: string }>).find((c) => c.Title === "Go Basics");
+  if (!go) return;
+  const detail = await (await request.get(`${API}/collections/${go.ID}`)).json();
+  for (const c of (detail.Cards ?? []) as Array<{ ID: string; Term: string }>) {
+    if (c.Term === E2E_CARD_TERM) await request.delete(`${API}/collections/${go.ID}/cards/${c.ID}`);
+  }
+  for (const e of (detail.Exercises ?? []) as Array<{ ID: string; Kind: string; Question?: string }>) {
+    if (e.Kind === "quiz" && e.Question === E2E_QUIZ_QUESTION) await request.delete(`${API}/collections/${go.ID}/tests/${e.ID}`);
+  }
+});
 
 test("dev-login lands on collections and shows the seed collection", async ({ page }) => {
   await login(page);
@@ -43,15 +67,12 @@ test("import panel offers JSON/YAML only — no CSV", async ({ page }) => {
   await page.getByText("Private Notes").first().click();
   await page.waitForURL(/\/collections\/[0-9a-f-]+$/);
 
-  // Enter edit mode (pulls the draft), then open the import panel. Wait for the button
-  // to render — the page shows a skeleton until the collection + answers load.
-  const edit = page.getByRole("button", { name: /edit/i }).or(page.getByRole("button", { name: /continue editing/i }));
-  await expect(edit.first()).toBeVisible({ timeout: 30_000 });
-  await edit.first().click();
-
-  const importBtn = page.getByRole("button", { name: /import/i }).first();
-  await expect(importBtn).toBeVisible({ timeout: 30_000 });
-  await importBtn.click();
+  // Import is reached via Add item → Import JSON (the single import path). Wait for the
+  // Add item button — the page shows a skeleton until the collection + answers load.
+  const add = page.getByRole("button", { name: /add item/i }).first();
+  await expect(add).toBeVisible({ timeout: 30_000 });
+  await add.click();
+  await page.getByRole("button", { name: "Import JSON" }).click();
 
   // Unified import panel — JSON only; no CSV. Anchored on the copy-prompt action.
   await expect(page.getByRole("button", { name: /Copy prompt for AI/i })).toBeVisible();
@@ -84,14 +105,14 @@ test("Add item → Import JSON: paste, Preview, then Import", async ({ page }) =
   await page.getByRole("button", { name: "Import JSON" }).click();
 
   const json = JSON.stringify([
-    { type: "card", term: "e2e-import-term", definition: "e2e-import-def" },
-    { type: "quiz", question: "e2e quiz?", options: [{ text: "yes", correct: true }, { text: "no", correct: false }] },
+    { type: "card", term: E2E_CARD_TERM, definition: "e2e-import-def" },
+    { type: "quiz", question: E2E_QUIZ_QUESTION, options: [{ text: "yes", correct: true }, { text: "no", correct: false }] },
   ]);
   await page.locator("textarea").fill(json);
 
   // Preview parses client-side and renders the items (the card term shows up).
   await page.getByRole("button", { name: /^preview$/i }).click();
-  await expect(page.getByText("e2e-import-term").first()).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByText(E2E_CARD_TERM).first()).toBeVisible({ timeout: 10_000 });
 
   // Import commits — the panel reports how many items landed.
   await page.getByRole("button", { name: /^import/i }).click();
@@ -124,6 +145,110 @@ test("live collection page restores a previously recorded quiz answer", async ({
   await question.click(); // tap to expand
   const option = page.getByRole("button", { name: correct.text }).first();
   await expect(option).toHaveClass(/green/, { timeout: 10_000 });
+});
+
+test("bank exercise still shows its word bank after an empty/skipped submission", async ({ page }) => {
+  test.setTimeout(60_000);
+  await login(page);
+  const cols = await (await page.request.get(`${API}/collections`)).json();
+  const go = (cols as Array<{ ID: string; Title: string }>).find((c) => c.Title === "Go Basics");
+  expect(go, "seed collection present").toBeTruthy();
+  const detail = await (await page.request.get(`${API}/collections/${go!.ID}`)).json();
+  const bank = (detail.Exercises ?? []).find((e: { Kind: string }) => e.Kind === "bank");
+  expect(bank, "seed bank exercise present").toBeTruthy();
+
+  // Record an EMPTY (skipped) submission for every sentence — overriding any prior
+  // answer. Regression: an empty submission used to lock the block into "checked"
+  // state, hiding the word bank and leaving the blanks empty (the exercise looked
+  // broken). Empty must count as unanswered.
+  const results = bank.Sentences.map((s: { id: string; answer: string[] }) => ({
+    sentence_id: s.id, correct: false, submitted: s.answer.map(() => ""),
+  }));
+  const rec = await page.request.post(`${API}/collections/${go!.ID}/exercises/results`, {
+    data: { results },
+  });
+  expect(rec.ok()).toBeTruthy();
+
+  // On the live collection page every item renders inline (no stepper), so the bank
+  // is visible. Its word bank chips (answers + distractors) must show.
+  await page.goto(`/collections/${go!.ID}`);
+  const chip = (bank.Distractors && bank.Distractors[0]) || bank.Sentences[0].answer[0];
+  await expect(page.getByText(chip, { exact: true }).first()).toBeVisible({ timeout: 30_000 });
+});
+
+test("exercise session ends with a Done button; back link sits at the bottom", async ({ page }) => {
+  test.setTimeout(60_000);
+  await login(page);
+  const cols = await (await page.request.get(`${API}/collections`)).json();
+  const go = (cols as Array<{ ID: string; Title: string }>).find((c) => c.Title === "Go Basics");
+  expect(go, "seed collection present").toBeTruthy();
+  const detail = await (await page.request.get(`${API}/collections/${go!.ID}`)).json();
+  const exs = (detail.Exercises ?? []) as Array<{ ID: string; Kind: string; Options?: { text: string; is_correct: boolean }[]; Sentences?: { id: string; answer: string[] }[] }>;
+  expect(exs.length, "seed exercises present").toBeGreaterThan(0);
+
+  // Mark every exercise answered so each block opens already "checked" — then each
+  // non-last block shows "Next →" and the last shows "Done".
+  const results = exs.flatMap((e) =>
+    e.Kind === "quiz"
+      ? [{ sentence_id: e.ID, correct: true, submitted: [e.Options!.find((o) => o.is_correct)!.text] }]
+      : e.Sentences!.map((s) => ({ sentence_id: s.id, correct: true, submitted: s.answer }))
+  );
+  const rec = await page.request.post(`${API}/collections/${go!.ID}/exercises/results`, { data: { results } });
+  expect(rec.ok()).toBeTruthy();
+
+  await page.goto(`/collections/${go!.ID}/exercises`);
+  // Wait for the session to render (the "n / N" counter), then step to the last card.
+  // Every block is pre-checked, so each non-last shows "Next →" and the last "Done".
+  await expect(page.getByText(/^\d+ \/ \d+$/).first()).toBeVisible({ timeout: 30_000 });
+  const next = page.getByRole("button", { name: /^Next/ });
+  for (let i = 0; i < exs.length - 1; i++) {
+    await expect(next).toBeVisible({ timeout: 10_000 });
+    await next.click();
+  }
+  await expect(page.getByRole("button", { name: /^Done$/ })).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByRole("link", { name: /Back to collection/i })).toBeVisible();
+});
+
+test("Match game: enabled with ≥5 cards, board renders and tiles flip", async ({ page }) => {
+  test.setTimeout(60_000);
+  await login(page);
+  const cols = await (await page.request.get(`${API}/collections`)).json();
+  const go = (cols as Array<{ ID: string; Title: string }>).find((c) => c.Title === "Go Basics");
+  expect(go, "seed collection present").toBeTruthy();
+  const detail = await (await page.request.get(`${API}/collections/${go!.ID}`)).json();
+  const cardCount = (detail.Cards ?? []).length;
+  expect(cardCount, "Go Basics needs ≥5 cards").toBeGreaterThanOrEqual(5);
+  const expectedTiles = 2 * Math.min(cardCount, 10);
+
+  await page.goto(`/collections/${go!.ID}`);
+  const matchLink = page.getByRole("link", { name: "Match" });
+  await expect(matchLink).toBeVisible({ timeout: 30_000 });
+  await matchLink.click();
+  await page.waitForURL(/\/match$/);
+
+  const tiles = page.getByTestId("match-tile");
+  await expect(tiles).toHaveCount(expectedTiles, { timeout: 30_000 });
+
+  // A tile starts face-down and flips up on click.
+  const first = tiles.first();
+  await expect(first).toHaveAttribute("data-facing", "down");
+  await first.click();
+  await expect(first).toHaveAttribute("data-facing", "up");
+});
+
+test("Match game: inactive when a collection has fewer than 5 cards", async ({ page }) => {
+  test.setTimeout(60_000);
+  await login(page);
+  const cols = await (await page.request.get(`${API}/collections`)).json();
+  const pn = (cols as Array<{ ID: string; Title: string }>).find((c) => c.Title === "Private Notes");
+  expect(pn, "seed collection present").toBeTruthy();
+  const detail = await (await page.request.get(`${API}/collections/${pn!.ID}`)).json();
+  expect((detail.Cards ?? []).length, "Private Notes should have <5 cards").toBeLessThan(5);
+
+  await page.goto(`/collections/${pn!.ID}`);
+  // Match is shown but inactive — rendered as plain text, not a link.
+  await expect(page.getByText("Match", { exact: true })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole("link", { name: "Match" })).toHaveCount(0);
 });
 
 test("blitz session loads a card question", async ({ page }) => {
