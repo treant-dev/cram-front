@@ -44,6 +44,34 @@ export type DraftBody = {
   test_questions: { id?: string; question: string; options: TestAnswer[]; image: string }[];
 };
 
+// Item is the unified content row (raw model), used by the granular draft API and diff.
+export type Item = {
+  ID: string;
+  Type: string;
+  CollectionID: string | null;
+  ParentID: string | null;
+  Content: Record<string, unknown>;
+  Rank: string;
+};
+
+// DraftItemBody is the payload for staging one item (add/edit).
+export type DraftItemBody = {
+  type: string;
+  parent_id?: string | null;
+  content: Record<string, unknown>;
+  rank?: string;
+};
+
+export type DraftDiffEntry = {
+  ItemID: string;
+  Type: string;
+  Status: "added" | "changed" | "deleted";
+  Before: Item | null; // published state (null when added)
+  After: Item | null;  // staged result (null when deleted)
+};
+
+export type DraftDiff = { Entries: DraftDiffEntry[] };
+
 export type PublicCollection = Collection & {
   FollowerCount: number;
   IsFollowed: boolean;
@@ -187,6 +215,18 @@ export const api = {
       request<void>(`/collections/${collectionID}/draft`, { method: "DELETE" }),
     publish: (collectionID: string) =>
       request<void>(`/collections/${collectionID}/draft/publish`, { method: "POST" }),
+    // Colored review of staged-but-unpublished changes.
+    diff: (collectionID: string) =>
+      request<DraftDiff>(`/collections/${collectionID}/draft/diff`),
+    // Granular staging (one item at a time) — also the surface MCP tools reuse.
+    addItem: (collectionID: string, item: DraftItemBody) =>
+      request<Item>(`/collections/${collectionID}/draft/items`, { method: "POST", body: JSON.stringify(item) }),
+    updateItem: (collectionID: string, itemID: string, item: DraftItemBody) =>
+      request<Item>(`/collections/${collectionID}/draft/items/${itemID}`, { method: "PUT", body: JSON.stringify(item) }),
+    deleteItem: (collectionID: string, itemID: string) =>
+      request<void>(`/collections/${collectionID}/draft/items/${itemID}`, { method: "DELETE" }),
+    revertItem: (collectionID: string, itemID: string) =>
+      request<void>(`/collections/${collectionID}/draft/items/${itemID}/revert`, { method: "POST" }),
   },
   follows: {
     follow: (collectionID: string) =>

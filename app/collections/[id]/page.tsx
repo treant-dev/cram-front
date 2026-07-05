@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { api, Collection, Card, TestQuestion, TestAnswer, Exercise, ProgressData, ProgressEntry } from "@/lib/api";
+import { api, Collection, Card, TestQuestion, TestAnswer, Exercise, ProgressData, ProgressEntry, Item, DraftDiff, DraftDiffEntry } from "@/lib/api";
 import LevelDot from "@/components/LevelDot";
 import SpeakButton from "@/components/SpeakButton";
 import { isLoggedIn } from "@/lib/auth";
@@ -160,6 +160,101 @@ function ImportTestPanel({ collectionID, onImported, onCancel }: {
 
 function trunc(s: string, n: number) {
   return s.length > n ? s.slice(0, n) + "…" : s;
+}
+
+// ── Draft review (colored diff of staged changes) ───────────────────────────────
+
+// itemSummary renders a short one-line label for an item from its content.
+function itemSummary(it: Item | null): string {
+  if (!it) return "";
+  const c = it.Content || {};
+  const s = (k: string) => (typeof c[k] === "string" ? (c[k] as string) : "");
+  if (it.Type === "card") {
+    const term = s("term"), def = s("definition");
+    return def ? `${term} — ${def}` : term;
+  }
+  if (it.Type === "exercise") return c.kind === "quiz" ? s("question") : s("title");
+  if (it.Type === "sentence") return s("text");
+  return JSON.stringify(c);
+}
+
+const statusMeta: Record<DraftDiffEntry["Status"], { label: string; dot: string; box: string }> = {
+  added: { label: "Added", dot: "bg-green-500", box: "border-green-200 dark:border-green-800 bg-green-50/50 dark:bg-green-900/10" },
+  changed: { label: "Changed", dot: "bg-amber-500", box: "border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-900/10" },
+  deleted: { label: "Deleted", dot: "bg-red-500", box: "border-red-200 dark:border-red-800 bg-red-50/50 dark:bg-red-900/10" },
+};
+
+function DraftReview({ diff, saving, onRevert, onPublish, onDiscard, onClose }: {
+  diff: DraftDiff;
+  saving: boolean;
+  onRevert: (itemID: string) => Promise<void>;
+  onPublish: () => void;
+  onDiscard: () => void;
+  onClose: () => void;
+}) {
+  const entries = diff.Entries;
+  const [reverting, setReverting] = useState<string | null>(null);
+
+  async function revert(id: string) {
+    setReverting(id);
+    try { await onRevert(id); } finally { setReverting(null); }
+  }
+
+  return (
+    <div className="border border-indigo-200 dark:border-indigo-800 rounded-xl p-5 mt-2 flex flex-col gap-4 bg-indigo-50/30 dark:bg-indigo-900/10">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="font-semibold text-gray-800 dark:text-slate-200">
+          Pending changes {entries.length > 0 && <span className="text-gray-400 dark:text-slate-500">({entries.length})</span>}
+        </h2>
+        <button onClick={onClose} className="text-sm text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300">Close</button>
+      </div>
+
+      {entries.length === 0 ? (
+        <p className="text-sm text-gray-500 dark:text-slate-400">No staged changes.</p>
+      ) : (
+        <ul className="flex flex-col gap-2">
+          {entries.map((e) => {
+            const m = statusMeta[e.Status];
+            return (
+              <li key={e.ItemID} className={`border rounded-lg p-3 flex items-start justify-between gap-3 ${m.box}`}>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className={`w-2 h-2 rounded-full shrink-0 ${m.dot}`} />
+                    <span className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-slate-400">{m.label}</span>
+                    <span className="text-xs text-gray-400 dark:text-slate-500">{e.Type}</span>
+                  </div>
+                  {e.Status === "changed" ? (
+                    <div className="text-sm">
+                      <p className="text-gray-400 dark:text-slate-500 line-through truncate">{itemSummary(e.Before)}</p>
+                      <p className="text-gray-800 dark:text-slate-200 truncate">{itemSummary(e.After)}</p>
+                    </div>
+                  ) : (
+                    <p className={`text-sm truncate ${e.Status === "deleted" ? "text-gray-400 dark:text-slate-500 line-through" : "text-gray-800 dark:text-slate-200"}`}>
+                      {itemSummary(e.After ?? e.Before)}
+                    </p>
+                  )}
+                </div>
+                <button
+                  onClick={() => revert(e.ItemID)}
+                  disabled={saving || reverting === e.ItemID}
+                  className="text-xs px-2.5 py-1 rounded-md border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200 disabled:opacity-50 shrink-0"
+                >
+                  {reverting === e.ItemID ? "…" : "Revert"}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      {entries.length > 0 && (
+        <div className="flex gap-2 justify-end">
+          <button onClick={onDiscard} disabled={saving} className="text-sm px-4 py-1.5 rounded-lg border border-red-200 dark:border-red-800 bg-white dark:bg-slate-800 text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-60">Discard all</button>
+          <button onClick={onPublish} disabled={saving} className="text-sm px-4 py-1.5 rounded-lg bg-indigo-600 text-white font-medium hover:bg-indigo-700 disabled:opacity-60">Publish</button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ── Exercise import panel (YAML) ───────────────────────────────────────────────
@@ -421,6 +516,8 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
   const [editMode, setEditMode] = useState(false);
   const [draftCollectionID, setDraftCollectionID] = useState<string | null>(null);
   const [hasDraft, setHasDraft] = useState(false);
+  const [diff, setDiff] = useState<DraftDiff | null>(null); // non-null = review panel open
+  const [diffLoading, setDiffLoading] = useState(false);
 
   // Editable content (mirrors draft on server).
   const [metaTitle, setMetaTitle] = useState("");
@@ -583,6 +680,43 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
     } finally {
       setSaving(false);
     }
+  }
+
+  // Open the colored review of staged (unpublished) changes.
+  async function openReview() {
+    if (!collection) return;
+    setDiffLoading(true);
+    try {
+      setDiff(await api.drafts.diff(collection.ID));
+    } finally {
+      setDiffLoading(false);
+    }
+  }
+
+  // Revert one staged item back to its published state, then refresh the review.
+  async function revertItem(itemID: string) {
+    if (!collection) return;
+    await api.drafts.revertItem(collection.ID, itemID);
+    const next = await api.drafts.diff(collection.ID);
+    setDiff(next);
+    if (next.Entries.length === 0) {
+      // Draft is now empty — nothing left to review.
+      const refreshed = await api.collections.get(collection.ID);
+      setCollection(refreshed);
+      setHasDraft(false);
+      setDraftCollectionID(null);
+      setDiff(null);
+    }
+  }
+
+  // Publish / discard from within the review panel.
+  async function publishFromReview() {
+    await publish();
+    setDiff(null);
+  }
+  async function discardFromReview() {
+    await discard();
+    setDiff(null);
   }
 
   function closeAllForms() {
@@ -1038,6 +1172,18 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
           </div>
         )}
 
+        {/* ── Draft review (colored diff of staged changes) ── */}
+        {!editMode && isOwner && diff && (
+          <DraftReview
+            diff={diff}
+            saving={saving}
+            onRevert={revertItem}
+            onPublish={publishFromReview}
+            onDiscard={discardFromReview}
+            onClose={() => setDiff(null)}
+          />
+        )}
+
         {/* ── Owner actions (view mode only) ── */}
         {!editMode && isOwner && (
           <div className="border-t border-gray-100 dark:border-slate-800 pt-6 mt-2 flex flex-col gap-3">
@@ -1045,6 +1191,9 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
               {/* Cards/tests draft editor — available on any collection */}
               {hasDraft ? (
                 <>
+                  <button onClick={openReview} disabled={saving || diffLoading} className={`${btnBase} border-indigo-300 dark:border-indigo-700 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/40`}>
+                    {diffLoading ? "Loading…" : "Review changes"}
+                  </button>
                   <button onClick={enterEditMode} disabled={saving} className={`${btnBase} border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/40`}>
                     Continue editing
                   </button>
