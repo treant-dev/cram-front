@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { api, Collection, Card, TestQuestion, TestAnswer, Exercise, ProgressData, ProgressEntry, Item, DraftDiff, DraftDiffEntry } from "@/lib/api";
+import { api, Collection, Card, TestQuestion, TestAnswer, Exercise, ProgressData, ProgressEntry, Item, DraftDiffEntry } from "@/lib/api";
 import LevelDot from "@/components/LevelDot";
 import SpeakButton from "@/components/SpeakButton";
 import { isLoggedIn } from "@/lib/auth";
@@ -22,10 +22,11 @@ const exampleCardYAML = `- question: What is a goroutine?
 - question: What does defer do?
   answer: Runs a function when the surrounding function returns`;
 
-function ImportPanel({ collectionID, onImported, onCancel }: {
+function ImportPanel({ collectionID, onImported, onCancel, draft }: {
   collectionID: string;
   onImported: () => void; // reload cards (panel stays open to show the result)
   onCancel: () => void;
+  draft?: boolean; // stage into the draft instead of writing to live
 }) {
   const [text, setText] = useState("");
   const [importing, setImporting] = useState(false);
@@ -38,7 +39,7 @@ function ImportPanel({ collectionID, onImported, onCancel }: {
     setImporting(true);
     setError(null);
     try {
-      const res = await api.cards.importText(collectionID, text);
+      const res = await api.cards.importText(collectionID, text, draft);
       setResult(res);
       setText("");
       onImported();
@@ -94,10 +95,11 @@ const exampleTestYAML = `- question: What is Go?
     - { text: A scripting language }
     - { text: A markup language }`;
 
-function ImportTestPanel({ collectionID, onImported, onCancel }: {
+function ImportTestPanel({ collectionID, onImported, onCancel, draft }: {
   collectionID: string;
   onImported: () => void; // reload questions (panel stays open to show the result)
   onCancel: () => void;
+  draft?: boolean;
 }) {
   const [text, setText] = useState("");
   const [importing, setImporting] = useState(false);
@@ -110,7 +112,7 @@ function ImportTestPanel({ collectionID, onImported, onCancel }: {
     setImporting(true);
     setError(null);
     try {
-      const res = await api.tests.importText(collectionID, text);
+      const res = await api.tests.importText(collectionID, text, draft);
       setResult(res);
       setText("");
       onImported();
@@ -178,81 +180,20 @@ function itemSummary(it: Item | null): string {
   return JSON.stringify(c);
 }
 
-const statusMeta: Record<DraftDiffEntry["Status"], { label: string; dot: string; box: string }> = {
-  added: { label: "Added", dot: "bg-green-500", box: "border-green-200 dark:border-green-800 bg-green-50/50 dark:bg-green-900/10" },
-  changed: { label: "Changed", dot: "bg-amber-500", box: "border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-900/10" },
-  deleted: { label: "Deleted", dot: "bg-red-500", box: "border-red-200 dark:border-red-800 bg-red-50/50 dark:bg-red-900/10" },
-};
-
-function DraftReview({ diff, saving, onRevert, onPublish, onDiscard, onClose }: {
-  diff: DraftDiff;
-  saving: boolean;
-  onRevert: (itemID: string) => Promise<void>;
-  onPublish: () => void;
-  onDiscard: () => void;
-  onClose: () => void;
-}) {
-  const entries = diff.Entries;
-  const [reverting, setReverting] = useState<string | null>(null);
-
-  async function revert(id: string) {
-    setReverting(id);
-    try { await onRevert(id); } finally { setReverting(null); }
-  }
-
+// DeletedRow renders a staged-for-deletion item (red) with a restore button, using
+// the published (Before) content for its label.
+function DeletedRow({ entry, onRestore }: { entry: DraftDiffEntry; onRestore: (id: string) => Promise<void> }) {
+  const [busy, setBusy] = useState(false);
   return (
-    <div className="border border-indigo-200 dark:border-indigo-800 rounded-xl p-5 mt-2 flex flex-col gap-4 bg-indigo-50/30 dark:bg-indigo-900/10">
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="font-semibold text-gray-800 dark:text-slate-200">
-          Pending changes {entries.length > 0 && <span className="text-gray-400 dark:text-slate-500">({entries.length})</span>}
-        </h2>
-        <button onClick={onClose} className="text-sm text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300">Close</button>
-      </div>
-
-      {entries.length === 0 ? (
-        <p className="text-sm text-gray-500 dark:text-slate-400">No staged changes.</p>
-      ) : (
-        <ul className="flex flex-col gap-2">
-          {entries.map((e) => {
-            const m = statusMeta[e.Status];
-            return (
-              <li key={e.ItemID} className={`border rounded-lg p-3 flex items-start justify-between gap-3 ${m.box}`}>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className={`w-2 h-2 rounded-full shrink-0 ${m.dot}`} />
-                    <span className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-slate-400">{m.label}</span>
-                    <span className="text-xs text-gray-400 dark:text-slate-500">{e.Type}</span>
-                  </div>
-                  {e.Status === "changed" ? (
-                    <div className="text-sm">
-                      <p className="text-gray-400 dark:text-slate-500 line-through truncate">{itemSummary(e.Before)}</p>
-                      <p className="text-gray-800 dark:text-slate-200 truncate">{itemSummary(e.After)}</p>
-                    </div>
-                  ) : (
-                    <p className={`text-sm truncate ${e.Status === "deleted" ? "text-gray-400 dark:text-slate-500 line-through" : "text-gray-800 dark:text-slate-200"}`}>
-                      {itemSummary(e.After ?? e.Before)}
-                    </p>
-                  )}
-                </div>
-                <button
-                  onClick={() => revert(e.ItemID)}
-                  disabled={saving || reverting === e.ItemID}
-                  className="text-xs px-2.5 py-1 rounded-md border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200 disabled:opacity-50 shrink-0"
-                >
-                  {reverting === e.ItemID ? "…" : "Revert"}
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-
-      {entries.length > 0 && (
-        <div className="flex gap-2 justify-end">
-          <button onClick={onDiscard} disabled={saving} className="text-sm px-4 py-1.5 rounded-lg border border-red-200 dark:border-red-800 bg-white dark:bg-slate-800 text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-60">Discard all</button>
-          <button onClick={onPublish} disabled={saving} className="text-sm px-4 py-1.5 rounded-lg bg-indigo-600 text-white font-medium hover:bg-indigo-700 disabled:opacity-60">Publish</button>
-        </div>
-      )}
+    <div className="border border-red-300 dark:border-red-700 bg-red-50/50 dark:bg-red-900/10 rounded-xl px-5 py-3 flex justify-between items-center gap-4">
+      <span className="text-sm text-gray-500 dark:text-slate-400 truncate min-w-0">{itemSummary(entry.Before)}</span>
+      <button
+        onClick={async () => { setBusy(true); try { await onRestore(entry.ItemID); } finally { setBusy(false); } }}
+        disabled={busy}
+        className="text-sm text-indigo-500 hover:text-indigo-700 dark:text-indigo-400 shrink-0 disabled:opacity-50"
+      >
+        {busy ? "…" : "Вернуть"}
+      </button>
     </div>
   );
 }
@@ -278,10 +219,11 @@ const exampleYAML = `- type: bank
         - [go, going]
         - [on]`;
 
-function ExerciseImportPanel({ collectionID, onImported, onCancel }: {
+function ExerciseImportPanel({ collectionID, onImported, onCancel, draft }: {
   collectionID: string;
   onImported: () => void; // reload the collection (panel stays open to show the result)
   onCancel: () => void;
+  draft?: boolean;
 }) {
   const [text, setText] = useState("");
   const [importing, setImporting] = useState(false);
@@ -293,7 +235,7 @@ function ExerciseImportPanel({ collectionID, onImported, onCancel }: {
     setImporting(true);
     setError(null);
     try {
-      const res = await api.exercises.importText(collectionID, text);
+      const res = await api.exercises.importText(collectionID, text, draft);
       setResult(res);
       setText("");
       onImported();
@@ -341,29 +283,50 @@ function ExerciseImportPanel({ collectionID, onImported, onCancel }: {
 // Manage panel: list exercises with a delete button each (append-only import, this is how
 // you remove items). Direct delete on the published collection — no draft flow.
 // Edit-mode exercises list: reset the user's answers or delete each exercise.
-function ExerciseEditList({ collectionID, exercises, onChanged }: {
+function ExerciseEditList({ collectionID, exercises, statusOf, deleted, onDelete, onRestore }: {
   collectionID: string;
   exercises: Exercise[];
-  onChanged: () => void;
+  statusOf: (id: string) => "added" | "changed" | undefined;      // draft status tint
+  deleted: { id: string; label: string }[];                        // staged deletions
+  onDelete: (id: string) => Promise<void>;                         // stage a delete
+  onRestore: (id: string) => Promise<void>;                        // revert a staged change
 }) {
   const [busy, setBusy] = useState<string | null>(null);
 
-  async function run(exID: string, fn: () => Promise<void>) {
-    setBusy(exID);
-    try { await fn(); onChanged(); } finally { setBusy(null); }
+  async function run(id: string, fn: () => Promise<void>) {
+    setBusy(id);
+    try { await fn(); } finally { setBusy(null); }
   }
+
+  const exLabel = (ex: Exercise) =>
+    ex.Title || (ex.Kind === "quiz" ? ex.Question : `${ex.Sentences?.length ?? 0} sentence${(ex.Sentences?.length ?? 0) !== 1 ? "s" : ""}`);
 
   return (
     <ul className="flex flex-col gap-2">
-      {exercises.map((ex) => (
-        <li key={ex.ID} className="flex items-center gap-3 bg-gray-50 dark:bg-slate-800 rounded-lg px-3 py-2">
-          <span className="text-xs px-2 py-0.5 rounded-full bg-gray-200 dark:bg-slate-700 text-gray-500 dark:text-slate-400 capitalize shrink-0">{ex.Kind}</span>
-          <span className="text-sm text-gray-700 dark:text-slate-300 truncate flex-1 min-w-0">
-            {ex.Title || (ex.Kind === "quiz" ? ex.Question : `${ex.Sentences?.length ?? 0} sentence${(ex.Sentences?.length ?? 0) !== 1 ? "s" : ""}`)}
-          </span>
-          <button type="button" onClick={() => run(ex.ID, () => api.exercises.resetExercise(collectionID, ex.ID))} disabled={busy === ex.ID} className="text-sm text-gray-500 hover:text-gray-700 dark:text-slate-400 dark:hover:text-slate-200 shrink-0 disabled:opacity-50">Reset</button>
-          <button type="button" onClick={() => run(ex.ID, () => api.exercises.delete(collectionID, ex.ID))} disabled={busy === ex.ID} className="text-sm text-red-500 hover:text-red-600 dark:hover:text-red-300 shrink-0 disabled:opacity-50">
-            {busy === ex.ID ? "…" : "Delete"}
+      {exercises.map((ex) => {
+        const st = statusOf(ex.ID);
+        const tint = st === "added"
+          ? "bg-green-50/60 dark:bg-green-900/10 border border-green-300 dark:border-green-700"
+          : st === "changed"
+          ? "bg-amber-50/60 dark:bg-amber-900/10 border border-amber-300 dark:border-amber-700"
+          : "bg-gray-50 dark:bg-slate-800";
+        return (
+          <li key={ex.ID} className={`flex items-center gap-3 rounded-lg px-3 py-2 ${tint}`}>
+            <span className="text-xs px-2 py-0.5 rounded-full bg-gray-200 dark:bg-slate-700 text-gray-500 dark:text-slate-400 capitalize shrink-0">{ex.Kind}</span>
+            <span className="text-sm text-gray-700 dark:text-slate-300 truncate flex-1 min-w-0">{exLabel(ex)}</span>
+            <button type="button" onClick={() => run(ex.ID, () => api.exercises.resetExercise(collectionID, ex.ID))} disabled={busy === ex.ID} className="text-sm text-gray-500 hover:text-gray-700 dark:text-slate-400 dark:hover:text-slate-200 shrink-0 disabled:opacity-50">Reset</button>
+            <button type="button" onClick={() => run(ex.ID, () => onDelete(ex.ID))} disabled={busy === ex.ID} className="text-sm text-red-500 hover:text-red-600 dark:hover:text-red-300 shrink-0 disabled:opacity-50">
+              {busy === ex.ID ? "…" : "Delete"}
+            </button>
+          </li>
+        );
+      })}
+      {deleted.map((d) => (
+        <li key={d.id} className="flex items-center gap-3 rounded-lg px-3 py-2 bg-red-50/60 dark:bg-red-900/10 border border-red-300 dark:border-red-700">
+          <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400 shrink-0">deleted</span>
+          <span className="text-sm text-gray-500 dark:text-slate-400 truncate flex-1 min-w-0">{d.label}</span>
+          <button type="button" onClick={() => run(d.id, () => onRestore(d.id))} disabled={busy === d.id} className="text-sm text-indigo-500 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300 shrink-0 disabled:opacity-50">
+            {busy === d.id ? "…" : "Вернуть"}
           </button>
         </li>
       ))}
@@ -516,15 +479,14 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
   const [editMode, setEditMode] = useState(false);
   const [draftCollectionID, setDraftCollectionID] = useState<string | null>(null);
   const [hasDraft, setHasDraft] = useState(false);
-  const [diff, setDiff] = useState<DraftDiff | null>(null); // non-null = review panel open
-  const [diffLoading, setDiffLoading] = useState(false);
+  const [editExercises, setEditExercises] = useState<Exercise[]>([]); // overlay exercises in edit mode
+  const [diffByID, setDiffByID] = useState<Record<string, "added" | "changed">>({}); // per-item tint
+  const [deletedEntries, setDeletedEntries] = useState<DraftDiffEntry[]>([]); // staged deletions (shown red)
 
   // Editable content (mirrors draft on server).
   const [metaTitle, setMetaTitle] = useState("");
   const [metaDesc, setMetaDesc] = useState("");
-  const [metaIsPublic, setMetaIsPublic] = useState(false);
   const [editCards, setEditCards] = useState<Card[]>([]);
-  const [editTests, setEditTests] = useState<TestQuestion[]>([]);
 
   const [editingCard, setEditingCard] = useState<Card | null>(null);
   const [editingTest, setEditingTest] = useState<TestQuestion | null>(null);
@@ -534,6 +496,7 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
   const [savedResults, setSavedResults] = useState<Record<string, string[]> | null>(null);
   const [showImport, setShowImport] = useState(false);
   const [showImportTest, setShowImportTest] = useState(false);
+  const [showImportExercise, setShowImportExercise] = useState(false);
   const [saving, setSaving] = useState(false);
   const [shareToken, setShareToken] = useState<string | null>(null);
   const [shareLoading, setShareLoading] = useState(false);
@@ -596,6 +559,23 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
 
   // ── Edit mode lifecycle ──────────────────────────────────────────────────────
 
+  // Load the draft overlay (live + staged) + diff into edit-mode state. Called on
+  // enter and after every staging action (approach B: each change hits item_draft).
+  async function refreshDraft(cid: string) {
+    const [ov, df] = await Promise.all([api.drafts.getOrCreate(cid), api.drafts.diff(cid)]);
+    setEditCards(ov.Cards ?? []);
+    setEditExercises(ov.Exercises ?? []);
+    const map: Record<string, "added" | "changed"> = {};
+    const del: DraftDiffEntry[] = [];
+    for (const e of df.Entries) {
+      if (e.Status === "deleted") del.push(e);
+      else map[e.ItemID] = e.Status;
+    }
+    setDiffByID(map);
+    setDeletedEntries(del);
+    return ov;
+  }
+
   async function enterEditMode() {
     if (!collection) return;
     setSaving(true);
@@ -605,41 +585,30 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
       setHasDraft(true);
       setMetaTitle(draft.Title);
       setMetaDesc(draft.Description);
-      setMetaIsPublic(draft.IsPublic);
-      setEditCards(draft.Cards ?? []);
-      setEditTests(draft.TestQuestions ?? []);
+      await refreshDraft(collection.ID);
       setEditMode(true);
     } finally {
       setSaving(false);
     }
   }
 
-  function buildDraftBody() {
-    return {
-      title: metaTitle.trim() || (collection?.Title ?? ""),
-      description: metaDesc.trim(),
-      is_public: metaIsPublic,
-      cards: editCards.map((c) => ({
-        id: c.ID.startsWith("new-") ? undefined : c.ID,
-        term: c.Term,
-        definition: c.Definition,
-        image: c.Image,
-      })),
-      test_questions: editTests.map((t) => ({
-        id: t.ID.startsWith("new-") ? undefined : t.ID,
-        question: t.Question,
-        options: t.Options,
-        image: t.Image,
-      })),
-    };
+  // Persist collection meta (title/description) if the user changed it — meta lives on
+  // the collection, not in item_draft, so it's saved directly.
+  async function saveMeta() {
+    if (!collection) return;
+    const title = metaTitle.trim() || collection.Title;
+    if (title !== collection.Title || metaDesc.trim() !== (collection.Description ?? "")) {
+      await api.collections.update(collection.ID, title, metaDesc.trim(), collection.IsPublic);
+      setCollection(await api.collections.get(collection.ID));
+    }
   }
 
-  // Save draft and stay in view mode (unpublished).
-  async function saveDraftAndExit() {
+  // Exit editor, keep the draft staged (resume later).
+  async function exitEdit() {
     if (!collection) return;
     setSaving(true);
     try {
-      await api.drafts.update(collection.ID, buildDraftBody());
+      await saveMeta();
       setEditMode(false);
       closeAllForms();
     } finally {
@@ -647,12 +616,12 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
     }
   }
 
-  // Publish draft → becomes the new active version.
+  // Publish the staged draft → becomes the new active version.
   async function publish() {
     if (!collection) return;
     setSaving(true);
     try {
-      await api.drafts.update(collection.ID, buildDraftBody());
+      await saveMeta();
       await api.drafts.publish(collection.ID);
       const refreshed = await api.collections.get(collection.ID);
       setCollection(refreshed);
@@ -665,7 +634,7 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
     }
   }
 
-  // Discard draft → delete it, reload active version.
+  // Discard the whole draft, reload active version.
   async function discard() {
     if (!collection) return;
     setSaving(true);
@@ -682,98 +651,65 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
     }
   }
 
-  // Open the colored review of staged (unpublished) changes.
-  async function openReview() {
-    if (!collection) return;
-    setDiffLoading(true);
-    try {
-      setDiff(await api.drafts.diff(collection.ID));
-    } finally {
-      setDiffLoading(false);
-    }
-  }
-
-  // Revert one staged item back to its published state, then refresh the review.
-  async function revertItem(itemID: string) {
-    if (!collection) return;
-    await api.drafts.revertItem(collection.ID, itemID);
-    const next = await api.drafts.diff(collection.ID);
-    setDiff(next);
-    if (next.Entries.length === 0) {
-      // Draft is now empty — nothing left to review.
-      const refreshed = await api.collections.get(collection.ID);
-      setCollection(refreshed);
-      setHasDraft(false);
-      setDraftCollectionID(null);
-      setDiff(null);
-    }
-  }
-
-  // Publish / discard from within the review panel.
-  async function publishFromReview() {
-    await publish();
-    setDiff(null);
-  }
-  async function discardFromReview() {
-    await discard();
-    setDiff(null);
-  }
-
   function closeAllForms() {
     setShowCardForm(false);
     setShowTestForm(false);
     setShowImport(false);
     setShowImportTest(false);
+    setShowImportExercise(false);
     setEditingCard(null);
     setEditingTest(null);
   }
 
-  // ── Local-only card operations (edit mode) ───────────────────────────────────
+  // ── Granular draft operations (edit mode) — each stages into item_draft ───────
 
-  function addCard(term: string, definition: string, image: string) {
-    const card: Card = {
-      ID: `new-${Date.now()}`,
-      CollectionID: draftCollectionID ?? "",
-      Term: term, Definition: definition, Image: image,
-      Position: editCards.length,
-      CreatedAt: "", UpdatedAt: "",
-    };
-    setEditCards((prev) => [...prev, card]);
+  const cardBody = (term: string, definition: string, image: string) => ({
+    type: "card",
+    content: { term, definition, ...(image ? { image } : {}) },
+  });
+  const quizBody = (question: string, options: TestAnswer[], image: string) => ({
+    type: "exercise",
+    content: {
+      kind: "quiz",
+      question,
+      options: options.map((o) => ({ text: o.text, is_correct: o.is_correct, ...(o.explanation ? { explanation: o.explanation } : {}) })),
+      ...(image ? { image } : {}),
+    },
+  });
+
+  async function addCard(term: string, definition: string, image: string) {
+    if (!collection) return;
+    await api.drafts.addItem(collection.ID, cardBody(term, definition, image));
+    await refreshDraft(collection.ID);
     setShowCardForm(false);
   }
-
-  function updateCard(term: string, definition: string, image: string) {
-    if (!editingCard) return;
-    setEditCards((prev) => prev.map((c) => c.ID === editingCard.ID ? { ...c, Term: term, Definition: definition, Image: image } : c));
+  async function updateCard(term: string, definition: string, image: string) {
+    if (!collection || !editingCard) return;
+    await api.drafts.updateItem(collection.ID, editingCard.ID, cardBody(term, definition, image));
+    await refreshDraft(collection.ID);
     setEditingCard(null);
   }
-
-  function deleteCard(id: string) {
-    setEditCards((prev) => prev.filter((c) => c.ID !== id));
-  }
-
-  // ── Local-only test operations (edit mode) ───────────────────────────────────
-
-  function addTest(question: string, options: TestAnswer[], image: string) {
-    const tq: TestQuestion = {
-      ID: `new-${Date.now()}`,
-      CollectionID: draftCollectionID ?? "",
-      Question: question, Options: options, Image: image,
-      Position: editTests.length,
-      CreatedAt: "", UpdatedAt: "",
-    };
-    setEditTests((prev) => [...prev, tq]);
+  async function addTest(question: string, options: TestAnswer[], image: string) {
+    if (!collection) return;
+    await api.drafts.addItem(collection.ID, quizBody(question, options, image));
+    await refreshDraft(collection.ID);
     setShowTestForm(false);
   }
-
-  function updateTest(question: string, options: TestAnswer[], image: string) {
-    if (!editingTest) return;
-    setEditTests((prev) => prev.map((t) => t.ID === editingTest.ID ? { ...t, Question: question, Options: options, Image: image } : t));
+  async function updateTest(question: string, options: TestAnswer[], image: string) {
+    if (!collection || !editingTest) return;
+    await api.drafts.updateItem(collection.ID, editingTest.ID, quizBody(question, options, image));
+    await refreshDraft(collection.ID);
     setEditingTest(null);
   }
-
-  function deleteTest(id: string) {
-    setEditTests((prev) => prev.filter((t) => t.ID !== id));
+  async function deleteItem(id: string) {
+    if (!collection) return;
+    await api.drafts.deleteItem(collection.ID, id);
+    await refreshDraft(collection.ID);
+  }
+  async function restoreItem(id: string) {
+    if (!collection) return;
+    await api.drafts.revertItem(collection.ID, id);
+    await refreshDraft(collection.ID);
   }
 
   // ── Immediate actions (view mode, owner only) ────────────────────────────────
@@ -887,13 +823,28 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
   }
 
   const isOwner = currentUserID === collection.UserID;
-  // In view mode show active collection content; in edit mode show draft content.
+  // In view mode show active content; in edit mode show the draft overlay.
   const cards = editMode ? editCards : (collection.Cards ?? []);
-  const tests = editMode ? editTests : (collection.TestQuestions ?? []);
-  const exercises = collection.Exercises ?? [];
+  const allExercises = editMode ? editExercises : (collection.Exercises ?? []);
+  // Quizzes (former tests) are exercises with kind=quiz — split them into their own
+  // section (edited via TestForm); bank/choice stay in the Exercises section.
+  const quizzes: TestQuestion[] = allExercises
+    .filter((e) => e.Kind === "quiz")
+    .map((e) => ({ ID: e.ID, CollectionID: "", Question: e.Kind === "quiz" ? e.Question : "", Options: e.Kind === "quiz" ? e.Options : [], Image: "", Position: 0, CreatedAt: "", UpdatedAt: "" }));
+  const exercises = allExercises.filter((e) => e.Kind !== "quiz");
+  // Draft tint + staged deletions, grouped by section.
+  const delCards = deletedEntries.filter((e) => e.Type === "card");
+  const delQuizzes = deletedEntries.filter((e) => e.Type === "exercise" && (e.Before?.Content as { kind?: string })?.kind === "quiz");
+  const delExercises = deletedEntries.filter((e) => e.Type === "exercise" && (e.Before?.Content as { kind?: string })?.kind !== "quiz");
+  const rowTint = (id: string) =>
+    diffByID[id] === "added"
+      ? "border-green-300 dark:border-green-700 bg-green-50/50 dark:bg-green-900/10"
+      : diffByID[id] === "changed"
+      ? "border-amber-300 dark:border-amber-700 bg-amber-50/50 dark:bg-amber-900/10"
+      : "border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900";
   // Mixed collections: capability by content presence, not a single collection type.
-  const hasExercises = exercises.length > 0;
-  const itemCount = cards.length + tests.length + exercises.length;
+  const hasExercises = allExercises.length > 0;
+  const itemCount = cards.length + allExercises.length;
   const hasFlip = cards.length >= 2;               // flip-card mode needs ≥2 cards
   const hasBlitz = cards.length >= 1;              // blitz is cards-only
   const allItemKeys = cards.map((c) => `card:${c.ID}`); // progress is card-only
@@ -919,16 +870,16 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
                 <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
                   Draft
                 </span>
-                <span className="text-xs text-gray-400 dark:text-slate-500 hidden sm:inline">Changes are kept as a draft until you save</span>
+                <span className="text-xs text-gray-400 dark:text-slate-500 hidden sm:inline">Changes are staged as a draft until you publish</span>
               </div>
               <div className="flex items-center gap-2">
-                <button onClick={publish} disabled={saving} title="Publish changes (make them live)" className={`${btnBase} bg-indigo-600 border-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-60`}>
-                  {saving ? "Saving…" : "Save"}
+                <button onClick={publish} disabled={saving} title="Publish the draft (make it live)" className={`${btnBase} bg-indigo-600 border-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-60`}>
+                  {saving ? "…" : "Publish"}
                 </button>
-                <button onClick={saveDraftAndExit} disabled={saving} title="Save draft and close editor" className={`${btnBase} border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700 disabled:opacity-60`}>
-                  Close
+                <button onClick={exitEdit} disabled={saving} title="Leave the editor, keep the draft to continue later" className={`${btnBase} border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700 disabled:opacity-60`}>
+                  Exit
                 </button>
-                <button onClick={discard} disabled={saving} title="Discard unsaved changes" className={`${btnBase} border-red-200 dark:border-red-800 bg-white dark:bg-slate-800 text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-60`}>
+                <button onClick={discard} disabled={saving} title="Discard the whole draft" className={`${btnBase} border-red-200 dark:border-red-800 bg-white dark:bg-slate-800 text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-60`}>
                   Discard
                 </button>
               </div>
@@ -1049,11 +1000,10 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
 
             {editMode && showImport && draftCollectionID && (
               <ImportPanel
-                collectionID={draftCollectionID}
+                collectionID={collection.ID}
+                draft
                 onCancel={() => setShowImport(false)}
-                onImported={() => {
-                  api.drafts.getOrCreate(collection.ID).then((draft) => setEditCards(draft.Cards ?? []));
-                }}
+                onImported={() => { refreshDraft(collection.ID); }}
               />
             )}
             {editMode && showCardForm && <CardForm onSave={addCard} onCancel={() => setShowCardForm(false)} userRole={currentUserRole} />}
@@ -1064,7 +1014,7 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
                   {editMode && editingCard?.ID === card.ID ? (
                     <CardForm initial={card} onSave={updateCard} onCancel={() => setEditingCard(null)} userRole={currentUserRole} />
                   ) : (
-                    <div className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl px-5 py-3 flex justify-between items-center gap-4">
+                    <div className={`border rounded-xl px-5 py-3 flex justify-between items-center gap-4 ${editMode ? rowTint(card.ID) : "border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900"}`}>
                       <div className="flex-1 min-w-0 flex items-center gap-3">
                         {card.Image && (
                           <img src={card.Image} alt="" className="w-10 h-10 rounded object-cover shrink-0" />
@@ -1079,7 +1029,7 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
                       {editMode ? (
                         <div className="flex gap-3 text-sm shrink-0">
                           <button onClick={() => { closeAllForms(); setEditingCard(card); }} className="text-indigo-500 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300">Edit</button>
-                          <button onClick={() => deleteCard(card.ID)} className="text-red-400 hover:text-red-600 dark:hover:text-red-300">Delete</button>
+                          <button onClick={() => deleteItem(card.ID)} className="text-red-400 hover:text-red-600 dark:hover:text-red-300">Delete</button>
                         </div>
                       ) : (
                         <LevelDot level={itemProgress[`card:${card.ID}`]?.level} nextReviewAt={itemProgress[`card:${card.ID}`]?.next_review_at} />
@@ -1088,51 +1038,46 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
                   )}
                 </li>
               ))}
-              {editMode && cards.length === 0 && <p className="text-sm text-gray-400 dark:text-slate-500">No cards yet.</p>}
+              {editMode && delCards.map((e) => (
+                <li key={e.ItemID}><DeletedRow entry={e} onRestore={restoreItem} /></li>
+              ))}
+              {editMode && cards.length === 0 && delCards.length === 0 && <p className="text-sm text-gray-400 dark:text-slate-500">No cards yet.</p>}
             </ul>
           </div>
         )}
 
-        {/* ── Test questions section ── */}
-        {(tests.length > 0 || editMode) && (
+        {/* ── Quiz section (edit mode only; in view mode quizzes appear in the review) ── */}
+        {editMode && (
           <div className="mb-8">
-            {editMode && (
-              <div className="flex items-center justify-between mb-3">
-                <h2 className="font-semibold text-gray-700 dark:text-slate-300">Test questions ({tests.length})</h2>
-                <div className="flex gap-2">
-                  <button onClick={() => { closeAllForms(); setShowTestForm((v) => !v); }}
-                    className={`${btnBase} border-indigo-300 dark:border-indigo-700 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/40`}>+ Add question</button>
-                  <button onClick={() => { closeAllForms(); setShowImportTest((v) => !v); }}
-                    className={`${btnBase} border-indigo-300 dark:border-indigo-700 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/40`}>+ Import</button>
-                </div>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="font-semibold text-gray-700 dark:text-slate-300">Quiz ({quizzes.length})</h2>
+              <div className="flex gap-2">
+                <button onClick={() => { closeAllForms(); setShowTestForm((v) => !v); }}
+                  className={`${btnBase} border-indigo-300 dark:border-indigo-700 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/40`}>+ Add quiz</button>
+                <button onClick={() => { closeAllForms(); setShowImportTest((v) => !v); }}
+                  className={`${btnBase} border-indigo-300 dark:border-indigo-700 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/40`}>+ Import</button>
               </div>
-            )}
+            </div>
 
-            {editMode && showImportTest && draftCollectionID && (
+            {showImportTest && draftCollectionID && (
               <ImportTestPanel
-                collectionID={draftCollectionID}
+                collectionID={collection.ID}
+                draft
                 onCancel={() => setShowImportTest(false)}
-                onImported={() => {
-                  api.drafts.getOrCreate(collection.ID).then((draft) => setEditTests(draft.TestQuestions ?? []));
-                }}
+                onImported={() => { refreshDraft(collection.ID); }}
               />
             )}
-            {editMode && showTestForm && <TestForm onSave={addTest} onCancel={() => setShowTestForm(false)} />}
+            {showTestForm && <TestForm onSave={addTest} onCancel={() => setShowTestForm(false)} />}
 
             <ul className="flex flex-col gap-2">
-              {tests.map((tq) => (
+              {quizzes.map((tq) => (
                 <li key={tq.ID}>
-                  {editMode && editingTest?.ID === tq.ID ? (
+                  {editingTest?.ID === tq.ID ? (
                     <TestForm initial={tq} onSave={updateTest} onCancel={() => setEditingTest(null)} />
                   ) : (
-                    <div className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl px-5 py-3 flex justify-between items-start gap-4">
+                    <div className={`border rounded-xl px-5 py-3 flex justify-between items-start gap-4 ${rowTint(tq.ID)}`}>
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          {tq.Image && (
-                            <img src={tq.Image} alt="" className="w-10 h-10 rounded object-cover shrink-0" />
-                          )}
-                          <p className="font-medium text-gray-900 dark:text-slate-100">{tq.Question}</p>
-                        </div>
+                        <p className="font-medium text-gray-900 dark:text-slate-100 mb-1">{tq.Question}</p>
                         <div className="flex flex-wrap gap-1">
                           {tq.Options.map((o, i) => (
                             <span key={i} className={`text-xs rounded px-2 py-0.5 ${o.is_correct ? "bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400" : "bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400"}`}>
@@ -1141,19 +1086,18 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
                           ))}
                         </div>
                       </div>
-                      {editMode ? (
-                        <div className="flex gap-3 text-sm shrink-0">
-                          <button onClick={() => { closeAllForms(); setEditingTest(tq); }} className="text-indigo-500 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300">Edit</button>
-                          <button onClick={() => deleteTest(tq.ID)} className="text-red-400 hover:text-red-600 dark:hover:text-red-300">Delete</button>
-                        </div>
-                      ) : (
-                        <LevelDot level={itemProgress[`tq:${tq.ID}`]?.level} nextReviewAt={itemProgress[`tq:${tq.ID}`]?.next_review_at} />
-                      )}
+                      <div className="flex gap-3 text-sm shrink-0">
+                        <button onClick={() => { closeAllForms(); setEditingTest(tq); }} className="text-indigo-500 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300">Edit</button>
+                        <button onClick={() => deleteItem(tq.ID)} className="text-red-400 hover:text-red-600 dark:hover:text-red-300">Delete</button>
+                      </div>
                     </div>
                   )}
                 </li>
               ))}
-              {editMode && tests.length === 0 && <p className="text-sm text-gray-400 dark:text-slate-500">No test questions yet.</p>}
+              {delQuizzes.map((e) => (
+                <li key={e.ItemID}><DeletedRow entry={e} onRestore={restoreItem} /></li>
+              ))}
+              {quizzes.length === 0 && delQuizzes.length === 0 && <p className="text-sm text-gray-400 dark:text-slate-500">No quizzes yet.</p>}
             </ul>
           </div>
         )}
@@ -1161,27 +1105,40 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
         {/* ── Exercises (read-only review: shows your answers if any; run via "Exercise") ── */}
         {hasExercises && !editMode && savedResults !== null && (
           <div className="mb-8">
-            <h2 className="text-sm font-semibold text-gray-500 dark:text-slate-400 mb-3">Exercises ({exercises.length})</h2>
-            <ExerciseWorksheet exercises={exercises} collectionID={collection.ID} saved={savedResults} readOnly />
+            <h2 className="text-sm font-semibold text-gray-500 dark:text-slate-400 mb-3">Exercises ({allExercises.length})</h2>
+            <ExerciseWorksheet exercises={allExercises} collectionID={collection.ID} saved={savedResults} readOnly />
           </div>
         )}
-        {hasExercises && editMode && (
+        {editMode && (
           <div className="mb-8">
-            <h2 className="text-sm font-semibold text-gray-500 dark:text-slate-400 mb-3">Exercises ({exercises.length})</h2>
-            <ExerciseEditList collectionID={collection.ID} exercises={exercises} onChanged={async () => { setCollection(await api.collections.get(collection.ID)); }} />
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="font-semibold text-gray-700 dark:text-slate-300">Exercises ({exercises.length})</h2>
+              <button onClick={() => { closeAllForms(); setShowImportExercise((v) => !v); }}
+                className={`${btnBase} border-indigo-300 dark:border-indigo-700 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/40`}>+ Import</button>
+            </div>
+            {showImportExercise && draftCollectionID && (
+              <div className="mb-3">
+                <ExerciseImportPanel
+                  collectionID={collection.ID}
+                  draft
+                  onCancel={() => setShowImportExercise(false)}
+                  onImported={() => { refreshDraft(collection.ID); }}
+                />
+              </div>
+            )}
+            {(exercises.length > 0 || delExercises.length > 0) ? (
+              <ExerciseEditList
+                collectionID={collection.ID}
+                exercises={exercises}
+                statusOf={(id) => diffByID[id]}
+                deleted={delExercises.map((e) => ({ id: e.ItemID, label: itemSummary(e.Before) }))}
+                onDelete={deleteItem}
+                onRestore={restoreItem}
+              />
+            ) : (
+              <p className="text-sm text-gray-400 dark:text-slate-500">No exercises yet.</p>
+            )}
           </div>
-        )}
-
-        {/* ── Draft review (colored diff of staged changes) ── */}
-        {!editMode && isOwner && diff && (
-          <DraftReview
-            diff={diff}
-            saving={saving}
-            onRevert={revertItem}
-            onPublish={publishFromReview}
-            onDiscard={discardFromReview}
-            onClose={() => setDiff(null)}
-          />
         )}
 
         {/* ── Owner actions (view mode only) ── */}
@@ -1190,17 +1147,9 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
             <div className="flex flex-wrap gap-2">
               {/* Cards/tests draft editor — available on any collection */}
               {hasDraft ? (
-                <>
-                  <button onClick={openReview} disabled={saving || diffLoading} className={`${btnBase} border-indigo-300 dark:border-indigo-700 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/40`}>
-                    {diffLoading ? "Loading…" : "Review changes"}
-                  </button>
-                  <button onClick={enterEditMode} disabled={saving} className={`${btnBase} border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/40`}>
-                    Continue editing
-                  </button>
-                  <button onClick={discard} disabled={saving} className={`${btnBase} border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-500 dark:text-slate-400 hover:border-red-300 dark:hover:border-red-700 hover:text-red-500 dark:hover:text-red-400`}>
-                    Discard draft
-                  </button>
-                </>
+                <button onClick={enterEditMode} disabled={saving} className={`${btnBase} border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/40`}>
+                  Continue editing
+                </button>
               ) : (
                 <button onClick={enterEditMode} disabled={saving} className={`${btnBase} border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700`}>
                   {saving ? "Loading…" : "Edit"}

@@ -282,11 +282,11 @@ export const api = {
       form.append("file", file);
       return request<{ imported: number; skipped: number }>(`/collections/${collectionID}/cards/import`, { method: "POST", body: form });
     },
-    // Accepts a JSON or YAML list of {question, answer}.
-    importText: (collectionID: string, text: string) => {
+    // Accepts a JSON or YAML list of {question, answer}. draft=true stages into the draft.
+    importText: (collectionID: string, text: string, draft = false) => {
       const form = new FormData();
       form.append("file", new Blob([text], { type: "text/plain" }), "import.txt");
-      return request<{ imported: number; skipped: number }>(`/collections/${collectionID}/cards/import`, { method: "POST", body: form });
+      return request<{ imported: number; skipped: number }>(`/collections/${collectionID}/cards/import${draft ? "?draft=true" : ""}`, { method: "POST", body: form });
     },
   },
   tests: {
@@ -296,17 +296,17 @@ export const api = {
       request<TestQuestion>(`/collections/${collectionID}/tests/${tqID}`, { method: "PUT", body: JSON.stringify({ question, options, position }) }),
     delete: (collectionID: string, tqID: string) =>
       request<void>(`/collections/${collectionID}/tests/${tqID}`, { method: "DELETE" }),
-    // Accepts a JSON or YAML list of {question, options:[{text, correct}]}.
-    importText: (collectionID: string, text: string) => {
+    // Accepts a JSON or YAML list of {question, options:[{text, correct}]}. draft=true stages.
+    importText: (collectionID: string, text: string, draft = false) => {
       const form = new FormData();
       form.append("file", new Blob([text], { type: "text/plain" }), "import.txt");
-      return request<{ imported: number; skipped: number }>(`/collections/${collectionID}/tests/import`, { method: "POST", body: form });
+      return request<{ imported: number; skipped: number }>(`/collections/${collectionID}/tests/import${draft ? "?draft=true" : ""}`, { method: "POST", body: form });
     },
   },
   exercises: {
-    // Import a YAML/JSON document (raw body) into an exercises collection.
-    importText: (collectionID: string, text: string) =>
-      request<{ imported: number; skipped: number }>(`/collections/${collectionID}/exercises/import`, {
+    // Import a YAML/JSON document (raw body). draft=true stages into the draft.
+    importText: (collectionID: string, text: string, draft = false) =>
+      request<{ imported: number; skipped: number }>(`/collections/${collectionID}/exercises/import${draft ? "?draft=true" : ""}`, {
         method: "POST",
         body: text,
         headers: { "Content-Type": "application/x-yaml" },
