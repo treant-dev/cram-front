@@ -53,8 +53,8 @@ test("import panel offers JSON/YAML only — no CSV", async ({ page }) => {
   await expect(importBtn).toBeVisible({ timeout: 30_000 });
   await importBtn.click();
 
-  // Unified import panel — JSON (YAML accepted silently); no CSV.
-  await expect(page.getByText(/Import items \(JSON\)/i).first()).toBeVisible();
+  // Unified import panel — JSON only; no CSV. Anchored on the copy-prompt action.
+  await expect(page.getByRole("button", { name: /Copy prompt for AI/i })).toBeVisible();
   await expect(page.getByText("term;definition")).toHaveCount(0);
 });
 
@@ -71,6 +71,31 @@ test("edit mode lists items with per-item Edit/Delete actions (no crash on quiz)
   // Quiz items carry null Sentences — the unified list must render them without crashing.
   await expect(page.getByRole("button", { name: "Delete" }).first()).toBeVisible({ timeout: 30_000 });
   await expect(page.getByRole("button", { name: "Edit" }).first()).toBeVisible();
+});
+
+test("Add item → Import JSON: paste, Preview, then Import", async ({ page }) => {
+  test.setTimeout(60_000);
+  await login(page);
+  await page.getByText("Go Basics").first().click();
+  await page.waitForURL(/\/collections\/[0-9a-f-]+$/);
+
+  // Open the Add-item modal, choose the universal JSON importer.
+  await page.getByRole("button", { name: /add item/i }).first().click();
+  await page.getByRole("button", { name: "Import JSON" }).click();
+
+  const json = JSON.stringify([
+    { type: "card", term: "e2e-import-term", definition: "e2e-import-def" },
+    { type: "quiz", question: "e2e quiz?", options: [{ text: "yes", correct: true }, { text: "no", correct: false }] },
+  ]);
+  await page.locator("textarea").fill(json);
+
+  // Preview parses client-side and renders the items (the card term shows up).
+  await page.getByRole("button", { name: /^preview$/i }).click();
+  await expect(page.getByText("e2e-import-term").first()).toBeVisible({ timeout: 10_000 });
+
+  // Import commits — the panel reports how many items landed.
+  await page.getByRole("button", { name: /^import/i }).click();
+  await expect(page.getByText(/Imported \d+ item/i)).toBeVisible({ timeout: 15_000 });
 });
 
 test("live collection page restores a previously recorded quiz answer", async ({ page }) => {

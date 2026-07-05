@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { api, Collection, Card, TestQuestion, TestAnswer, Exercise, ProgressData, ProgressEntry, DraftDiffEntry } from "@/lib/api";
+import { api, Collection, Card, TestQuestion, TestAnswer, Exercise, ProgressEntry, DraftDiffEntry } from "@/lib/api";
 import LevelDot from "@/components/LevelDot";
 import { isLoggedIn } from "@/lib/auth";
 import Navbar from "@/components/Navbar";
@@ -42,10 +42,11 @@ function exerciseFromEntry(e: DraftDiffEntry): Exercise {
 // ── Unified item shell (one design for all types) ───────────────────────────────
 
 // Emoji action button (external panel).
-function IconBtn({ emoji, title, onClick, danger, type = "button" }: { emoji: string; title: string; onClick?: () => void; danger?: boolean; type?: "button" | "submit" }) {
+function IconBtn({ emoji, title, onClick, danger, type = "button", form }: { emoji: string; title: string; onClick?: () => void; danger?: boolean; type?: "button" | "submit"; form?: string }) {
   return (
     <button
       type={type}
+      form={form}
       onClick={onClick}
       title={title}
       aria-label={title}
@@ -98,7 +99,7 @@ function ItemShell({ type, tint, actions, onClick, children }: {
 // ── Unified import panel (JSON; YAML accepted silently) ─────────────────────────
 
 const exampleMixedJSON = `[
-  { "type": "card", "question": "What is a goroutine?", "answer": "A lightweight thread" },
+  { "type": "card", "term": "goroutine", "definition": "A lightweight thread managed by the Go runtime" },
   { "type": "quiz", "question": "Which declares a variable?",
     "options": [ { "text": "var x int", "correct": true },
                  { "text": "int x", "correct": false } ] },
@@ -106,6 +107,82 @@ const exampleMixedJSON = `[
     "sentences": [ { "text": "How ___ you?", "answer": ["are"] } ],
     "distractors": ["am", "was"] }
 ]`;
+
+// Self-contained prompt the user copies and pastes into an AI (ChatGPT/Claude/…)
+// together with their material — it returns a JSON document ready to paste back here.
+const AI_IMPORT_PROMPT = `You are helping me build study material for CRAM (a flashcard / quiz / exercise app).
+Output ONLY a single JSON array — no prose, no markdown code fences. Each element is one item tagged with "type".
+
+Supported types:
+
+1) Flashcard:
+   { "type": "card", "term": "<front>", "definition": "<back>" }
+
+2) Multiple-choice quiz:
+   { "type": "quiz", "question": "<question>",
+     "options": [ { "text": "<option>", "correct": true, "explanation": "<optional>" } ] }
+   Rules: at least 2 options and at least one "correct": true. Mark several correct for a multi-select question.
+
+3) Fill-in-the-blank exercise:
+   { "type": "exercise", "kind": "bank" | "choice", "title": "<optional>",
+     "sentences": [ { "text": "I ___ to school ___ bus", "answer": ["go", "by"] } ] }
+   - Use "___" (three underscores) for every blank; "answer" holds one word per blank, in order.
+   - kind "bank": add "distractors": ["extra","words"] — a shared pool of extra wrong words for the whole exercise.
+   - kind "choice": give each blank its own dropdown via "distractors": [ ["wrong1","wrong2"], ["wrong1"] ]
+     (one list per blank; the correct answer is added automatically).
+
+Full example of the exact output format:
+${exampleMixedJSON}
+
+Now generate items from the following material:
+<PASTE YOUR MATERIAL HERE>`;
+
+// One parsed row for the client-side preview (before the item is sent to the server).
+type PreviewItem =
+  | { kind: "card"; term: string; definition: string }
+  | { kind: "ex"; ex: Exercise };
+
+// Shape of a raw import entry (JSON) — only the fields we read, all optional.
+type RawImportItem = {
+  type?: string;
+  term?: string;
+  definition?: string;
+  question?: string; // card-front alias / quiz question
+  answer?: string;   // card-back alias
+  options?: { text?: string; correct?: boolean; explanation?: string }[];
+  kind?: string;
+  title?: string;
+  sentences?: { text?: string; answer?: string[]; distractors?: string[][] }[];
+  distractors?: string[];
+};
+
+// Parse the pasted JSON into preview rows, reusing the real render components. Throws
+// on malformed JSON / non-list input; unknown item types are skipped silently.
+function parseImportPreview(text: string): PreviewItem[] {
+  const data = JSON.parse(text) as unknown;
+  if (!Array.isArray(data)) throw new Error("expected a JSON list");
+  const out: PreviewItem[] = [];
+  (data as RawImportItem[]).forEach((it, idx) => {
+    const type = String(it?.type ?? "").trim();
+    if (type === "card") {
+      out.push({ kind: "card", term: String(it.term ?? it.question ?? ""), definition: String(it.definition ?? it.answer ?? "") });
+    } else if (type === "quiz") {
+      const options = (it.options ?? []).map((o) => ({ text: String(o.text ?? ""), is_correct: !!o.correct, explanation: o.explanation }));
+      out.push({ kind: "ex", ex: { ID: `pq${idx}`, CollectionID: "", Title: "", Position: idx, CreatedAt: "", UpdatedAt: "", Kind: "quiz", Question: String(it.question ?? ""), Options: options } as Exercise });
+    } else if (type === "exercise") {
+      const kind = it.kind === "choice" ? "choice" : "bank";
+      const sentences = (it.sentences ?? []).map((s, si) => ({
+        id: `ps${idx}_${si}`, text: String(s.text ?? ""), answer: (s.answer ?? []).map(String), distractors: s.distractors, position: si,
+      }));
+      const base = { ID: `pe${idx}`, CollectionID: "", Title: String(it.title ?? ""), Position: idx, CreatedAt: "", UpdatedAt: "" };
+      const ex = kind === "bank"
+        ? { ...base, Kind: "bank", Sentences: sentences, Distractors: it.distractors ?? [] }
+        : { ...base, Kind: "choice", Sentences: sentences };
+      out.push({ kind: "ex", ex: ex as Exercise });
+    }
+  });
+  return out;
+}
 
 function ImportItemsPanel({ collectionID, onImported, onCancel, draft }: {
   collectionID: string;
@@ -117,6 +194,20 @@ function ImportItemsPanel({ collectionID, onImported, onCancel, draft }: {
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ imported: number; skipped: number } | null>(null);
+  const [preview, setPreview] = useState<PreviewItem[] | null>(null); // set after Preview; gates Import
+  const [copied, setCopied] = useState(false);
+
+  function doPreview() {
+    if (!text.trim()) return;
+    try {
+      setPreview(parseImportPreview(text));
+      setError(null);
+    } catch (e) {
+      setPreview(null);
+      const msg = e instanceof Error ? e.message : String(e);
+      setError(`Couldn't preview — invalid JSON: ${msg}`);
+    }
+  }
 
   async function doImport() {
     if (!text.trim()) return;
@@ -126,6 +217,7 @@ function ImportItemsPanel({ collectionID, onImported, onCancel, draft }: {
       const res = await api.import.items(collectionID, text, draft);
       setResult(res);
       setText("");
+      setPreview(null);
       onImported();
     } catch {
       setError("Import failed — expected a JSON list of items, each with a \"type\" (card | quiz | exercise).");
@@ -134,17 +226,24 @@ function ImportItemsPanel({ collectionID, onImported, onCancel, draft }: {
     }
   }
 
+  function copyPrompt() {
+    navigator.clipboard.writeText(AI_IMPORT_PROMPT).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }).catch(() => {});
+  }
+
   return (
     <div className={formCls}>
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-sm font-medium text-gray-700 dark:text-slate-300">Import items (JSON)</p>
-        <p className="text-xs text-gray-400 dark:text-slate-500">list of <code className="bg-gray-100 dark:bg-slate-800 px-1 rounded">{"{ type: card | quiz | exercise, … }"}</code></p>
-      </div>
       <textarea
         className={inputCls + " min-h-[180px] resize-y font-mono text-xs"}
         placeholder={exampleMixedJSON}
         value={text}
-        onChange={(e) => { setText(e.target.value); setResult(null); }}
+        onChange={(e) => { setText(e.target.value); setResult(null); setPreview(null); }}
+        spellCheck={false}
+        autoCorrect="off"
+        autoCapitalize="off"
+        autoComplete="off"
         autoFocus
       />
       {error && <p className="text-xs text-red-500 dark:text-red-400">{error}</p>}
@@ -154,93 +253,48 @@ function ImportItemsPanel({ collectionID, onImported, onCancel, draft }: {
           {result.skipped > 0 && <span className="text-amber-600 dark:text-amber-400"> · {result.skipped} skipped (invalid)</span>}
         </p>
       )}
-      <div className="flex gap-2 justify-end">
-        <button type="button" onClick={onCancel} className="text-sm text-gray-500 dark:text-slate-400 px-3 py-1 hover:text-gray-700 dark:hover:text-slate-200">{result ? "Done" : "Cancel"}</button>
-        <button onClick={doImport} disabled={importing || !text.trim()} className="bg-indigo-600 text-white px-4 py-1.5 rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50">
-          {importing ? "Importing…" : "Import"}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// ── Exercise import panel (YAML) ───────────────────────────────────────────────
-
-const exampleYAML = `- type: bank
-  title: "Verb to be"
-  sentences:
-    - text: "How ___ you?"
-      answer: [are]
-    - text: "My ___ ___ Vasiliy"
-      answer: [name, is]
-  distractors: [am, was]
-- type: choice
-  sentences:
-    - text: "I saw ___ elephant"
-      answer: [an]
-      distractors: [[a, the, some]]
-    - text: "She ___ to work ___ bus"
-      answer: [goes, by]
-      distractors:
-        - [go, going]
-        - [on]`;
-
-function ExerciseImportPanel({ collectionID, onImported, onCancel, draft }: {
-  collectionID: string;
-  onImported: () => void; // reload the collection (panel stays open to show the result)
-  onCancel: () => void;
-  draft?: boolean;
-}) {
-  const [text, setText] = useState("");
-  const [importing, setImporting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<{ imported: number; skipped: number } | null>(null);
-
-  async function doImport() {
-    if (!text.trim()) return;
-    setImporting(true);
-    setError(null);
-    try {
-      const res = await api.exercises.importText(collectionID, text, draft);
-      setResult(res);
-      setText("");
-      onImported();
-    } catch {
-      setError("Import failed — check the YAML/JSON format.");
-    } finally {
-      setImporting(false);
-    }
-  }
-
-  return (
-    <div className={formCls}>
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-sm font-medium text-gray-700 dark:text-slate-300">Import exercises (YAML or JSON)</p>
-        <a href="/exercises-format.md" download="cram-exercises-format.md" className="text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:underline shrink-0">↓ AI format guide</a>
-      </div>
-      <textarea
-        className={inputCls + " min-h-[180px] resize-y font-mono text-xs"}
-        placeholder={exampleYAML}
-        value={text}
-        onChange={(e) => { setText(e.target.value); setResult(null); }}
-        autoFocus
-      />
-      {error && <p className="text-xs text-red-500 dark:text-red-400">{error}</p>}
-      {result && (
-        <p className="text-xs font-medium text-green-600 dark:text-green-400">
-          ✓ Imported {result.imported} exercise{result.imported !== 1 ? "s" : ""}
-          {result.skipped > 0 && <span className="text-amber-600 dark:text-amber-400"> · {result.skipped} skipped (invalid)</span>}
-        </p>
+      {preview && (
+        <div className="flex flex-col gap-3 border-t border-gray-200 dark:border-slate-700 pt-3">
+          <p className="text-xs text-gray-400 dark:text-slate-500">Preview — {preview.length} item{preview.length !== 1 ? "s" : ""}{preview.length === 0 ? " (nothing recognized)" : ""}</p>
+          {preview.map((p, i) => (
+            <ItemShell
+              key={i}
+              type={p.kind === "card" ? "Card" : p.ex.Kind === "quiz" ? "Quiz" : p.ex.Kind}
+              tint="border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900"
+              actions={null}
+            >
+              {p.kind === "card" ? (
+                <div className="min-w-0">
+                  <div className="text-gray-900 dark:text-slate-100">{p.term}</div>
+                  <div className="text-gray-600 dark:text-slate-400 text-sm mt-1">{p.definition}</div>
+                </div>
+              ) : (
+                <ExerciseBody ex={p.ex} saved={{}} />
+              )}
+            </ItemShell>
+          ))}
+        </div>
       )}
-      <div className="flex gap-2 justify-end">
-        <button type="button" onClick={onCancel} className="text-sm text-gray-500 dark:text-slate-400 px-3 py-1 hover:text-gray-700 dark:hover:text-slate-200">{result ? "Done" : "Cancel"}</button>
-        <button
-          onClick={doImport}
-          disabled={importing || !text.trim()}
-          className="bg-indigo-600 text-white px-4 py-1.5 rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50"
-        >
-          {importing ? "Importing…" : "Import"}
-        </button>
+      <div className="flex items-center gap-2">
+        <div className="ml-auto flex gap-2 items-center">
+          <button
+            type="button"
+            onClick={copyPrompt}
+            className="text-xs font-medium px-3 py-1.5 rounded-lg border border-indigo-300 dark:border-indigo-700 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-colors"
+          >
+            {copied ? "✓ Copied!" : "📋 Copy prompt for AI"}
+          </button>
+          <button type="button" onClick={onCancel} className="text-sm text-gray-500 dark:text-slate-400 px-3 py-1 hover:text-gray-700 dark:hover:text-slate-200">{result ? "Done" : "Cancel"}</button>
+          {preview ? (
+            <button onClick={doImport} disabled={importing || preview.length === 0} className="bg-indigo-600 text-white px-4 py-1.5 rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50">
+              {importing ? "Importing…" : `Import${preview.length ? ` (${preview.length})` : ""}`}
+            </button>
+          ) : (
+            <button onClick={doPreview} disabled={!text.trim()} className="bg-indigo-600 text-white px-4 py-1.5 rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50">
+              Preview
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -257,27 +311,41 @@ function AddItemModal({ collectionID, userRole, draft, onClose, onCardSave, onQu
   onQuizSave: (question: string, options: TestAnswer[], image: string) => void;
   onImported: () => void;
 }) {
-  const [type, setType] = useState<"card" | "quiz" | "exercise" | null>(null);
+  const [type, setType] = useState<"card" | "quiz" | "import" | null>(null);
+  const FORM_ID = "add-item-form";
+  // Card/Quiz forms submit via a Save button parked in the modal's top-left corner
+  // (opposite the ✕ close). Exercises have no inline form — they come in via Import JSON.
+  const leftAction = (type === "card" || type === "quiz")
+    ? <IconBtn type="submit" form={FORM_ID} emoji="💾" title="Save" />
+    : undefined;
+  // Picker options — the third choice opens the universal JSON importer.
+  const choices: { value: "card" | "quiz" | "import"; label: string }[] = [
+    { value: "card", label: "Card" },
+    { value: "quiz", label: "Quiz" },
+    { value: "import", label: "Import JSON" },
+  ];
+  // After a type is picked the header reflects it (Add card / Add quiz / Import JSON).
+  const title = type === "card" ? "Add card" : type === "quiz" ? "Add quiz" : type === "import" ? "Import JSON" : "Add item";
   return (
-    <Modal title="Add item" onClose={onClose}>
+    <Modal title={title} leftAction={leftAction} onClose={onClose}>
       {!type ? (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-          {(["card", "quiz", "exercise"] as const).map((t) => (
+          {choices.map((c) => (
             <button
-              key={t}
-              onClick={() => setType(t)}
-              className="border border-gray-200 dark:border-slate-700 rounded-xl px-4 py-6 text-center capitalize font-medium text-gray-700 dark:text-slate-300 hover:border-indigo-400 dark:hover:border-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors"
+              key={c.value}
+              onClick={() => setType(c.value)}
+              className="border border-gray-200 dark:border-slate-700 rounded-xl px-4 py-6 text-center font-medium text-gray-700 dark:text-slate-300 hover:border-indigo-400 dark:hover:border-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors"
             >
-              {t}
+              {c.label}
             </button>
           ))}
         </div>
       ) : type === "card" ? (
-        <CardForm onSave={(t, d, i) => { onCardSave(t, d, i); onClose(); }} onCancel={() => setType(null)} userRole={userRole} />
+        <CardForm formId={FORM_ID} hideActions onSave={(t, d, i) => { onCardSave(t, d, i); onClose(); }} onCancel={() => setType(null)} userRole={userRole} />
       ) : type === "quiz" ? (
-        <TestForm onSave={(q, o, i) => { onQuizSave(q, o, i); onClose(); }} onCancel={() => setType(null)} />
+        <TestForm formId={FORM_ID} hideActions onSave={(q, o, i) => { onQuizSave(q, o, i); onClose(); }} onCancel={() => setType(null)} />
       ) : (
-        <ExerciseImportPanel collectionID={collectionID} draft={draft} onImported={onImported} onCancel={() => setType(null)} />
+        <ImportItemsPanel collectionID={collectionID} draft={draft} onImported={onImported} onCancel={() => setType(null)} />
       )}
     </Modal>
   );
@@ -285,11 +353,13 @@ function AddItemModal({ collectionID, userRole, draft, onClose, onCardSave, onQu
 
 // ── Card form ────────────────────────────────────────────────────────────────
 
-function CardForm({ initial, onSave, onCancel, userRole }: {
+function CardForm({ initial, onSave, onCancel, userRole, formId, hideActions }: {
   initial?: Card;
   onSave: (term: string, definition: string, image: string) => void;
   onCancel: () => void;
   userRole?: string | null;
+  formId?: string;      // lets an external Save button (modal header) submit this form
+  hideActions?: boolean; // omit the built-in Save/Cancel side panel
 }) {
   const [term, setTerm] = useState(initial?.Term ?? "");
   const [definition, setDefinition] = useState(initial?.Definition ?? "");
@@ -317,7 +387,7 @@ function CardForm({ initial, onSave, onCancel, userRole }: {
   }
 
   return (
-    <form onSubmit={submit} className="flex flex-col sm:flex-row sm:items-start gap-2 mb-3">
+    <form id={formId} onSubmit={submit} className={hideActions ? "" : "flex flex-col sm:flex-row sm:items-start gap-2 mb-3"}>
       <div className={formBox}>
         <input className={inputCls} placeholder="Term" value={term} onChange={(e) => setTerm(e.target.value)} required autoFocus={!initial} maxLength={2000} />
         <div className="flex gap-2 items-center">
@@ -331,20 +401,24 @@ function CardForm({ initial, onSave, onCancel, userRole }: {
         </div>
         <ImageUpload value={image} onChange={setImage} />
       </div>
-      <div className="flex flex-row gap-1.5">
-        <IconBtn type="submit" emoji="💾" title={initial ? "Save" : "Add"} />
-        <IconBtn emoji="❌" title="Cancel" onClick={onCancel} />
-      </div>
+      {!hideActions && (
+        <div className="flex flex-row gap-1.5">
+          <IconBtn type="submit" emoji="💾" title={initial ? "Save" : "Add"} />
+          <IconBtn emoji="❌" title="Cancel" onClick={onCancel} />
+        </div>
+      )}
     </form>
   );
 }
 
 // ── Test question form ────────────────────────────────────────────────────────
 
-function TestForm({ initial, onSave, onCancel }: {
+function TestForm({ initial, onSave, onCancel, formId, hideActions }: {
   initial?: TestQuestion;
   onSave: (question: string, options: TestAnswer[], image: string) => void;
   onCancel: () => void;
+  formId?: string;
+  hideActions?: boolean;
 }) {
   const [question, setQuestion] = useState(initial?.Question ?? "");
   const [options, setOptions] = useState<TestAnswer[]>(
@@ -377,7 +451,7 @@ function TestForm({ initial, onSave, onCancel }: {
   const hasCorrect = options.some((o) => o.is_correct);
 
   return (
-    <form onSubmit={submit} className="flex flex-col sm:flex-row sm:items-start gap-2 mb-3">
+    <form id={formId} onSubmit={submit} className={hideActions ? "" : "flex flex-col sm:flex-row sm:items-start gap-2 mb-3"}>
       <div className={formBox}>
         <input className={inputCls} placeholder="Question" value={question} onChange={(e) => setQuestion(e.target.value)} required autoFocus={!initial} maxLength={2000} />
         <div className="flex flex-col gap-2">
@@ -401,10 +475,12 @@ function TestForm({ initial, onSave, onCancel }: {
         </div>
         <ImageUpload value={image} onChange={setImage} />
       </div>
-      <div className="flex flex-row gap-1.5">
-        <IconBtn type="submit" emoji="💾" title={initial ? "Save" : "Add"} />
-        <IconBtn emoji="❌" title="Cancel" onClick={onCancel} />
-      </div>
+      {!hideActions && (
+        <div className="flex flex-row gap-1.5">
+          <IconBtn type="submit" emoji="💾" title={initial ? "Save" : "Add"} />
+          <IconBtn emoji="❌" title="Cancel" onClick={onCancel} />
+        </div>
+      )}
     </form>
   );
 }
