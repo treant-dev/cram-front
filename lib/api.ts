@@ -21,22 +21,18 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return res.json();
 }
 
-export type CollectionType = "cards" | "tests" | "exercises";
-
 export type Collection = {
   ID: string;
   UserID: string;
   Title: string;
   Description: string;
-  Type: CollectionType;
   IsPublic: boolean;
-  IsDraft: boolean;
-  DraftOf: string | null;
   DraftID: string | null; // populated for owners when a draft exists
   ShareToken: string | null;
   Cards: Card[] | null;
   TestQuestions: TestQuestion[] | null;
   Exercises: Exercise[] | null;
+  Items?: Item[] | null; // raw unified items (with Rank) — used by the editor for ordering
   CreatedAt: string;
   UpdatedAt: string;
 };
@@ -48,6 +44,34 @@ export type DraftBody = {
   cards: { id?: string; term: string; definition: string; image: string }[];
   test_questions: { id?: string; question: string; options: TestAnswer[]; image: string }[];
 };
+
+// Item is the unified content row (raw model), used by the granular draft API and diff.
+export type Item = {
+  ID: string;
+  Type: string;
+  CollectionID: string | null;
+  ParentID: string | null;
+  Content: Record<string, unknown>;
+  Rank: string;
+};
+
+// DraftItemBody is the payload for staging one item (add/edit).
+export type DraftItemBody = {
+  type: string;
+  parent_id?: string | null;
+  content: Record<string, unknown>;
+  rank?: string;
+};
+
+export type DraftDiffEntry = {
+  ItemID: string;
+  Type: string;
+  Status: "added" | "changed" | "deleted";
+  Before: Item | null; // published state (null when added)
+  After: Item | null;  // staged result (null when deleted)
+};
+
+export type DraftDiff = { Entries: DraftDiffEntry[] };
 
 export type PublicCollection = Collection & {
   FollowerCount: number;
@@ -177,8 +201,8 @@ export const api = {
     listPublic: () => request<PublicCollection[]>("/public/collections"),
     get: (id: string) => request<Collection>(`/collections/${id}`),
     getPublic: (id: string) => request<Collection>(`/public/collections/${id}`),
-    create: (title: string, description: string, type: CollectionType = "cards", isPublic = false) =>
-      request<Collection>("/collections", { method: "POST", body: JSON.stringify({ title, description, type, is_public: isPublic }) }),
+    create: (title: string, description: string, isPublic = false) =>
+      request<Collection>("/collections", { method: "POST", body: JSON.stringify({ title, description, is_public: isPublic }) }),
     update: (id: string, title: string, description: string, isPublic: boolean) =>
       request<Collection>(`/collections/${id}`, { method: "PUT", body: JSON.stringify({ title, description, is_public: isPublic }) }),
     delete: (id: string) => request<void>(`/collections/${id}`, { method: "DELETE" }),
@@ -192,6 +216,21 @@ export const api = {
       request<void>(`/collections/${collectionID}/draft`, { method: "DELETE" }),
     publish: (collectionID: string) =>
       request<void>(`/collections/${collectionID}/draft/publish`, { method: "POST" }),
+    // Colored review of staged-but-unpublished changes.
+    diff: (collectionID: string) =>
+      request<DraftDiff>(`/collections/${collectionID}/draft/diff`),
+    // Granular staging (one item at a time) — also the surface MCP tools reuse.
+    addItem: (collectionID: string, item: DraftItemBody) =>
+      request<Item>(`/collections/${collectionID}/draft/items`, { method: "POST", body: JSON.stringify(item) }),
+    updateItem: (collectionID: string, itemID: string, item: DraftItemBody) =>
+      request<Item>(`/collections/${collectionID}/draft/items/${itemID}`, { method: "PUT", body: JSON.stringify(item) }),
+    deleteItem: (collectionID: string, itemID: string) =>
+      request<void>(`/collections/${collectionID}/draft/items/${itemID}`, { method: "DELETE" }),
+    revertItem: (collectionID: string, itemID: string) =>
+      request<void>(`/collections/${collectionID}/draft/items/${itemID}/revert`, { method: "POST" }),
+    // Reorder: place the item between two neighbors (either "" for a list end).
+    moveItem: (collectionID: string, itemID: string, afterID: string, beforeID: string) =>
+      request<void>(`/collections/${collectionID}/draft/items/${itemID}/move`, { method: "POST", body: JSON.stringify({ after_id: afterID, before_id: beforeID }) }),
   },
   follows: {
     follow: (collectionID: string) =>
@@ -247,11 +286,11 @@ export const api = {
       form.append("file", file);
       return request<{ imported: number; skipped: number }>(`/collections/${collectionID}/cards/import`, { method: "POST", body: form });
     },
-    // Accepts a JSON or YAML list of {question, answer}.
-    importText: (collectionID: string, text: string) => {
+    // Accepts a JSON or YAML list of {question, answer}. draft=true stages into the draft.
+    importText: (collectionID: string, text: string, draft = false) => {
       const form = new FormData();
       form.append("file", new Blob([text], { type: "text/plain" }), "import.txt");
-      return request<{ imported: number; skipped: number }>(`/collections/${collectionID}/cards/import`, { method: "POST", body: form });
+      return request<{ imported: number; skipped: number }>(`/collections/${collectionID}/cards/import${draft ? "?draft=true" : ""}`, { method: "POST", body: form });
     },
   },
   tests: {
@@ -261,17 +300,17 @@ export const api = {
       request<TestQuestion>(`/collections/${collectionID}/tests/${tqID}`, { method: "PUT", body: JSON.stringify({ question, options, position }) }),
     delete: (collectionID: string, tqID: string) =>
       request<void>(`/collections/${collectionID}/tests/${tqID}`, { method: "DELETE" }),
-    // Accepts a JSON or YAML list of {question, options:[{text, correct}]}.
-    importText: (collectionID: string, text: string) => {
+    // Accepts a JSON or YAML list of {question, options:[{text, correct}]}. draft=true stages.
+    importText: (collectionID: string, text: string, draft = false) => {
       const form = new FormData();
       form.append("file", new Blob([text], { type: "text/plain" }), "import.txt");
-      return request<{ imported: number; skipped: number }>(`/collections/${collectionID}/tests/import`, { method: "POST", body: form });
+      return request<{ imported: number; skipped: number }>(`/collections/${collectionID}/tests/import${draft ? "?draft=true" : ""}`, { method: "POST", body: form });
     },
   },
   exercises: {
-    // Import a YAML/JSON document (raw body) into an exercises collection.
-    importText: (collectionID: string, text: string) =>
-      request<{ imported: number; skipped: number }>(`/collections/${collectionID}/exercises/import`, {
+    // Import a YAML/JSON document (raw body). draft=true stages into the draft.
+    importText: (collectionID: string, text: string, draft = false) =>
+      request<{ imported: number; skipped: number }>(`/collections/${collectionID}/exercises/import${draft ? "?draft=true" : ""}`, {
         method: "POST",
         body: text,
         headers: { "Content-Type": "application/x-yaml" },
@@ -290,6 +329,16 @@ export const api = {
     // Clear the user's own answers for one exercise (retake).
     resetExercise: (collectionID: string, exID: string) =>
       request<void>(`/collections/${collectionID}/exercises/${exID}/progress`, { method: "DELETE" }),
+  },
+  // Unified import: a JSON (or YAML) list of items each tagged with `type`
+  // (card | quiz | exercise). draft=true stages into the draft.
+  import: {
+    items: (collectionID: string, text: string, draft = false) =>
+      request<{ imported: number; skipped: number }>(`/collections/${collectionID}/import${draft ? "?draft=true" : ""}`, {
+        method: "POST",
+        body: text,
+        headers: { "Content-Type": "application/json" },
+      }),
   },
   blitz: {
     get: (collectionID: string) =>
