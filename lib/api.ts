@@ -171,6 +171,22 @@ export type ProgressData = {
   test_questions: Record<string, ProgressEntry>;
 };
 
+export type TokenScope = "read" | "read_write";
+
+// A personal access token, as returned by the API — metadata only, never the value.
+export type AccessToken = {
+  id: string;
+  name: string;
+  scope: TokenScope;
+  created_at: string;
+  last_used_at: string | null;
+  expires_at: string | null;
+  revoked_at: string | null;
+};
+
+// The create response is the one and only time the token value is available.
+export type AccessTokenCreated = AccessToken & { token: string };
+
 export type HomeData = {
   Own: Collection[];
   Following: Collection[];
@@ -258,6 +274,15 @@ export const api = {
   },
   account: {
     delete: () => request<void>("/account", { method: "DELETE" }),
+  },
+  tokens: {
+    list: () => request<AccessToken[]>("/account/tokens"),
+    create: (name: string, scope: TokenScope) =>
+      request<AccessTokenCreated>("/account/tokens", {
+        method: "POST",
+        body: JSON.stringify({ name, scope }),
+      }),
+    revoke: (id: string) => request<void>(`/account/tokens/${id}`, { method: "DELETE" }),
   },
   share: {
     generate: (collectionID: string) =>

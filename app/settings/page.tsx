@@ -6,6 +6,7 @@ import { api } from "@/lib/api";
 import { logout } from "@/lib/auth";
 import { useCurrentUser } from "@/contexts/UserContext";
 import Navbar from "@/components/Navbar";
+import McpAccess from "@/components/McpAccess";
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -46,6 +47,9 @@ export default function SettingsPage() {
             </div>
           </div>
         </section>
+
+        {/* MCP access — personal access tokens + connection snippets */}
+        <McpAccess />
 
         {/* Danger zone */}
         <section className="bg-white dark:bg-slate-900 border border-red-200 dark:border-red-900/50 rounded-xl p-6">
