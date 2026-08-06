@@ -1,10 +1,10 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Navbar from "@/components/Navbar";
 import { api } from "@/lib/api";
-import { useCurrentUser } from "@/contexts/UserContext";
+import { rememberReturnTo } from "@/lib/returnTo";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
 
@@ -28,9 +28,33 @@ const SCOPE_TEXT: Record<string, { title: string; points: string[] }> = {
 
 function ConsentScreen() {
   const params = useSearchParams();
-  const currentUser = useCurrentUser();
   const [busy, setBusy] = useState<"approve" | "deny" | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // The session is checked here, before anything is shown, rather than at the moment Approve is
+  // pressed. A 401 on approve would send the user to the home page and take the authorization
+  // parameters with it, leaving them to start the connection over in the client application.
+  const [account, setAccount] = useState<{ email: string } | null | "checking">("checking");
+  useEffect(() => {
+    let active = true;
+    api.auth
+      .session()
+      .then((me) => {
+        if (active) setAccount({ email: me.email });
+      })
+      .catch(() => {
+        if (active) setAccount(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  function signIn() {
+    // Google's callback always lands on /auth/callback, so park where to come back to.
+    rememberReturnTo(window.location.pathname + window.location.search);
+    window.location.href = `${API_URL}/auth/google`;
+  }
 
   const clientName = params.get("client_name") || "An application";
   const scope = params.get("scope") === "read_write" ? "read_write" : "read";
@@ -61,8 +85,14 @@ function ConsentScreen() {
         approved,
       });
       window.location.href = redirect_to;
-    } catch {
-      setError("Could not complete the request. Try starting the connection again from the app.");
+    } catch (e) {
+      // The cookie can lapse between opening the page and pressing the button; that is a
+      // sign-in prompt, not a dead end.
+      if (e instanceof Error && /unauthorized/i.test(e.message)) {
+        setAccount(null);
+      } else {
+        setError("Could not complete the request. Try starting the connection again from the app.");
+      }
       setBusy(null);
     }
   }
@@ -75,13 +105,37 @@ function ConsentScreen() {
     );
   }
 
+  if (account === "checking") {
+    return <p className="text-sm text-gray-400 dark:text-slate-500">Checking your session…</p>;
+  }
+
+  if (account === null) {
+    return (
+      <div className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl p-6">
+        <h1 className="text-lg font-bold text-gray-900 dark:text-slate-100 mb-1">
+          Sign in to connect {clientName}
+        </h1>
+        <p className="text-xs text-gray-500 dark:text-slate-400 mb-5">
+          You need to be signed in to Cram before you can grant access. We will bring you back to this
+          page afterwards.
+        </p>
+        <button
+          onClick={signIn}
+          className="h-10 text-sm font-medium px-4 rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition-colors"
+        >
+          Sign in with Google
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl p-6">
       <h1 className="text-lg font-bold text-gray-900 dark:text-slate-100 mb-1">
         Connect <span className="text-indigo-600 dark:text-indigo-400">{clientName}</span> to Cram?
       </h1>
       <p className="text-xs text-gray-500 dark:text-slate-400 mb-4">
-        Signed in as {currentUser?.email ?? "your account"}. The application will act as you.
+        Signed in as {account.email}. The application will act as you.
       </p>
 
       <div className="rounded-lg border border-gray-200 dark:border-slate-700 p-4 mb-4">
@@ -138,13 +192,6 @@ export default function ConsentPage() {
         <noscript>
           <p className="mt-4 text-sm text-red-500">This page needs JavaScript.</p>
         </noscript>
-        <p className="mt-4 text-xs text-gray-400 dark:text-slate-500">
-          Not signed in?{" "}
-          <a className="text-indigo-600 dark:text-indigo-400 hover:underline" href={`${API_URL}/auth/google`}>
-            Sign in
-          </a>{" "}
-          and open this link again.
-        </p>
       </main>
     </div>
   );

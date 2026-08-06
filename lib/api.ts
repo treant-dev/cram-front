@@ -1,6 +1,14 @@
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+// Options that are ours, not fetch's.
+type RequestOpts = {
+  // Skip the global "401 → go home" handling. Needed wherever a 401 is an expected answer the
+  // page handles itself: navigating away would discard state the user cannot recreate, such as
+  // the OAuth parameters on the consent screen.
+  handle401?: boolean;
+};
+
+async function request<T>(path: string, init: RequestInit = {}, opts: RequestOpts = {}): Promise<T> {
   const isFormData = init.body instanceof FormData;
   const res = await fetch(`${BASE}${path}`, {
     ...init,
@@ -11,7 +19,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     },
   });
   if (!res.ok) {
-    if (res.status === 401) {
+    if (res.status === 401 && !opts.handle401) {
       localStorage.removeItem("logged_in");
       window.location.href = "/";
     }
@@ -237,6 +245,9 @@ export async function uploadFile(file: File): Promise<string> {
 export const api = {
   auth: {
     me: () => request<{ id: string; email: string; role: string; picture: string }>("/auth/me"),
+    // Like me(), but a missing session is an answer rather than a reason to leave the page.
+    session: () =>
+      request<{ id: string; email: string; role: string; picture: string }>("/auth/me", {}, { handle401: true }),
   },
   home: {
     get: () => request<HomeData>("/home"),
@@ -307,7 +318,13 @@ export const api = {
   oauth: {
     // Called by the consent screen; the API answers with where to send the browser next.
     approve: (decision: ConsentDecision) =>
-      request<{ redirect_to: string }>("/oauth/approve", { method: "POST", body: JSON.stringify(decision) }),
+      request<{ redirect_to: string }>(
+        "/oauth/approve",
+        { method: "POST", body: JSON.stringify(decision) },
+        // A session that expired mid-flow is shown as "sign in again" on the consent screen,
+        // not as a silent bounce to the home page.
+        { handle401: true },
+      ),
     connections: () => request<Connection[]>("/account/connections"),
     disconnect: (id: string) => request<void>(`/account/connections/${id}`, { method: "DELETE" }),
   },
