@@ -15,7 +15,16 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
       localStorage.removeItem("logged_in");
       window.location.href = "/";
     }
-    throw new Error(`${res.status} ${res.statusText}`);
+    // Surface the server's own words when it sent any: for refusals a user can act on —
+    // "you already have 5 active tokens" — a generic message would hide the way out.
+    // Guarded: reading the body must never replace the HTTP error with a error about reading it.
+    let detail = "";
+    try {
+      detail = (await res.text()) ?? "";
+    } catch {
+      detail = "";
+    }
+    throw new Error(detail.trim() || `${res.status} ${res.statusText}`);
   }
   if (res.status === 204) return undefined as T;
   return res.json();

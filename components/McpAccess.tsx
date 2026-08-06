@@ -134,8 +134,8 @@ export default function McpAccess() {
       setFreshToken(created.token);
       setName("");
       await reload();
-    } catch {
-      setError("Could not create the token.");
+    } catch (e) {
+      setError(e instanceof Error && e.message ? e.message : "Could not create the token.");
     } finally {
       setCreating(false);
     }
@@ -169,6 +169,9 @@ export default function McpAccess() {
 
   const live = tokens.filter((t) => !t.revoked_at);
   const revoked = tokens.filter((t) => t.revoked_at);
+  // Mirrors the server's limit; the server is still the one enforcing it.
+  const MAX_LIVE_TOKENS = 5;
+  const atLimit = live.length >= MAX_LIVE_TOKENS;
 
   return (
     <section className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl p-6 mb-6">
@@ -220,7 +223,7 @@ export default function McpAccess() {
         <form onSubmit={create} className="flex flex-wrap items-end gap-2 mb-5">
           <div className="flex-1 min-w-40">
             <label htmlFor="token-name" className="block text-xs text-gray-500 dark:text-slate-400 mb-1">
-              Name
+              Name <span className="text-gray-400 dark:text-slate-500">({live.length} of {MAX_LIVE_TOKENS} used)</span>
             </label>
             <input
               id="token-name"
@@ -259,7 +262,8 @@ export default function McpAccess() {
           </div>
           <button
             type="submit"
-            disabled={creating || !name.trim()}
+            disabled={creating || !name.trim() || atLimit}
+            title={atLimit ? `Revoke one of your ${MAX_LIVE_TOKENS} tokens to create another` : undefined}
             className="h-10 text-sm font-medium px-4 rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition-colors disabled:opacity-40"
           >
             {creating ? "Creating…" : "Create token"}
@@ -327,6 +331,12 @@ export default function McpAccess() {
             </li>
           ))}
         </ul>
+      )}
+
+      {revoked.length > 0 && (
+        <p className="mt-3 text-xs text-gray-400 dark:text-slate-500">
+          Revoked tokens are listed for 7 days, then removed.
+        </p>
       )}
 
       {error && <p className="mt-3 text-sm text-red-500">{error}</p>}

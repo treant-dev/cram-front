@@ -13,6 +13,8 @@ function jsonResponse(body: unknown, status = 200) {
     status,
     statusText: "",
     json: async () => body,
+    // A real Response always has text(); the client reads it to surface server-side refusals.
+    text: async () => (typeof body === "string" ? body : JSON.stringify(body)),
   } as Response;
 }
 
@@ -105,8 +107,18 @@ describe("api.tokens.revoke", () => {
 
 describe("failure handling", () => {
   it("throws on a 4xx so callers can surface an error", async () => {
-    fetchMock.mockResolvedValue(jsonResponse({ error: "bad scope" }, 400));
+    fetchMock.mockResolvedValue({ ok: false, status: 400, statusText: "Bad Request" } as Response);
 
     await expect(api.tokens.create("x", "read")).rejects.toThrow(/400/);
+  });
+
+  it("carries the server's message, which is the part a user can act on", async () => {
+    // The token limit is refused with a sentence that names the way out; a generic
+    // "could not create" would hide it.
+    fetchMock.mockResolvedValue(
+      jsonResponse("you already have 5 active tokens; revoke one before creating another", 409),
+    );
+
+    await expect(api.tokens.create("x", "read")).rejects.toThrow(/revoke one before creating another/);
   });
 });
