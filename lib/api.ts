@@ -1,6 +1,14 @@
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+// Options that are ours, not fetch's.
+type RequestOpts = {
+  // Skip the global "401 → go home" handling. Needed wherever a 401 is an expected answer the
+  // page handles itself: navigating away would discard state the user cannot recreate, such as
+  // the OAuth parameters on the consent screen.
+  handle401?: boolean;
+};
+
+async function request<T>(path: string, init: RequestInit = {}, opts: RequestOpts = {}): Promise<T> {
   const isFormData = init.body instanceof FormData;
   const res = await fetch(`${BASE}${path}`, {
     ...init,
@@ -11,11 +19,20 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     },
   });
   if (!res.ok) {
-    if (res.status === 401) {
+    if (res.status === 401 && !opts.handle401) {
       localStorage.removeItem("logged_in");
       window.location.href = "/";
     }
-    throw new Error(`${res.status} ${res.statusText}`);
+    // Surface the server's own words when it sent any: for refusals a user can act on —
+    // "you already have 5 active tokens" — a generic message would hide the way out.
+    // Guarded: reading the body must never replace the HTTP error with a error about reading it.
+    let detail = "";
+    try {
+      detail = (await res.text()) ?? "";
+    } catch {
+      detail = "";
+    }
+    throw new Error(detail.trim() || `${res.status} ${res.statusText}`);
   }
   if (res.status === 204) return undefined as T;
   return res.json();
@@ -171,6 +188,42 @@ export type ProgressData = {
   test_questions: Record<string, ProgressEntry>;
 };
 
+export type TokenScope = "read" | "read_write";
+
+// A personal access token, as returned by the API — metadata only, never the value.
+export type AccessToken = {
+  id: string;
+  name: string;
+  scope: TokenScope;
+  created_at: string;
+  last_used_at: string | null;
+  expires_at: string | null;
+  revoked_at: string | null;
+};
+
+// The create response is the one and only time the token value is available.
+export type AccessTokenCreated = AccessToken & { token: string };
+
+// An application the user connected over OAuth — what Settings lists and can disconnect.
+export type Connection = {
+  id: string;
+  client_name: string;
+  scope: TokenScope;
+  created_at: string;
+  last_used_at: string | null;
+};
+
+export type ConsentDecision = {
+  client_id: string;
+  redirect_uri: string;
+  scope: string;
+  state: string;
+  code_challenge: string;
+  code_challenge_method: string;
+  resource: string;
+  approved: boolean;
+};
+
 export type HomeData = {
   Own: Collection[];
   Following: Collection[];
@@ -192,6 +245,9 @@ export async function uploadFile(file: File): Promise<string> {
 export const api = {
   auth: {
     me: () => request<{ id: string; email: string; role: string; picture: string }>("/auth/me"),
+    // Like me(), but a missing session is an answer rather than a reason to leave the page.
+    session: () =>
+      request<{ id: string; email: string; role: string; picture: string }>("/auth/me", {}, { handle401: true }),
   },
   home: {
     get: () => request<HomeData>("/home"),
@@ -258,6 +314,28 @@ export const api = {
   },
   account: {
     delete: () => request<void>("/account", { method: "DELETE" }),
+  },
+  oauth: {
+    // Called by the consent screen; the API answers with where to send the browser next.
+    approve: (decision: ConsentDecision) =>
+      request<{ redirect_to: string }>(
+        "/oauth/approve",
+        { method: "POST", body: JSON.stringify(decision) },
+        // A session that expired mid-flow is shown as "sign in again" on the consent screen,
+        // not as a silent bounce to the home page.
+        { handle401: true },
+      ),
+    connections: () => request<Connection[]>("/account/connections"),
+    disconnect: (id: string) => request<void>(`/account/connections/${id}`, { method: "DELETE" }),
+  },
+  tokens: {
+    list: () => request<AccessToken[]>("/account/tokens"),
+    create: (name: string, scope: TokenScope) =>
+      request<AccessTokenCreated>("/account/tokens", {
+        method: "POST",
+        body: JSON.stringify({ name, scope }),
+      }),
+    revoke: (id: string) => request<void>(`/account/tokens/${id}`, { method: "DELETE" }),
   },
   share: {
     generate: (collectionID: string) =>

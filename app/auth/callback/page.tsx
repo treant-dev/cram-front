@@ -3,13 +3,16 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { markLoggedIn } from "@/lib/auth";
+import { takeReturnTo } from "@/lib/returnTo";
 
 export default function AuthCallback() {
   const router = useRouter();
 
   useEffect(() => {
     markLoggedIn();
-    router.replace("/collections");
+    // A page that needed a signed-in user (the OAuth consent screen) parks where to come back
+    // to, because Google always returns here.
+    router.replace(takeReturnTo() ?? "/collections");
   }, [router]);
 
   return (
