@@ -187,6 +187,26 @@ export type AccessToken = {
 // The create response is the one and only time the token value is available.
 export type AccessTokenCreated = AccessToken & { token: string };
 
+// An application the user connected over OAuth — what Settings lists and can disconnect.
+export type Connection = {
+  id: string;
+  client_name: string;
+  scope: TokenScope;
+  created_at: string;
+  last_used_at: string | null;
+};
+
+export type ConsentDecision = {
+  client_id: string;
+  redirect_uri: string;
+  scope: string;
+  state: string;
+  code_challenge: string;
+  code_challenge_method: string;
+  resource: string;
+  approved: boolean;
+};
+
 export type HomeData = {
   Own: Collection[];
   Following: Collection[];
@@ -274,6 +294,13 @@ export const api = {
   },
   account: {
     delete: () => request<void>("/account", { method: "DELETE" }),
+  },
+  oauth: {
+    // Called by the consent screen; the API answers with where to send the browser next.
+    approve: (decision: ConsentDecision) =>
+      request<{ redirect_to: string }>("/oauth/approve", { method: "POST", body: JSON.stringify(decision) }),
+    connections: () => request<Connection[]>("/account/connections"),
+    disconnect: (id: string) => request<void>(`/account/connections/${id}`, { method: "DELETE" }),
   },
   tokens: {
     list: () => request<AccessToken[]>("/account/tokens"),

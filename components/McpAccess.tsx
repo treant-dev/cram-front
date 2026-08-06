@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { api, type AccessToken, type TokenScope } from "@/lib/api";
+import { api, type AccessToken, type Connection, type TokenScope } from "@/lib/api";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
 const MCP_URL = `${API_URL}/mcp`;
@@ -80,6 +80,11 @@ export default function McpAccess() {
   const [freshToken, setFreshToken] = useState<string | null>(null);
   const [revoking, setRevoking] = useState<string | null>(null);
 
+  // Applications connected over OAuth. Separate from tokens: the user never sees a value here,
+  // they see who they let in.
+  const [connections, setConnections] = useState<Connection[]>([]);
+  const [disconnecting, setDisconnecting] = useState<string | null>(null);
+
   // Used after a create or revoke. The initial fetch lives in the effect below, which must not
   // call setState synchronously.
   const reload = useCallback(async () => {
@@ -95,6 +100,14 @@ export default function McpAccess() {
 
   useEffect(() => {
     let active = true;
+    api.oauth
+      .connections()
+      .then((list) => {
+        if (active) setConnections(list ?? []);
+      })
+      .catch(() => {
+        /* the list is secondary; a failure here must not hide the token UI */
+      });
     api.tokens
       .list()
       .then((list) => {
@@ -141,6 +154,19 @@ export default function McpAccess() {
     }
   }
 
+  async function disconnect(id: string) {
+    setDisconnecting(id);
+    setError(null);
+    try {
+      await api.oauth.disconnect(id);
+      setConnections((prev) => prev.filter((c) => c.id !== id));
+    } catch {
+      setError("Could not disconnect the application.");
+    } finally {
+      setDisconnecting(null);
+    }
+  }
+
   const live = tokens.filter((t) => !t.revoked_at);
   const revoked = tokens.filter((t) => t.revoked_at);
 
@@ -172,13 +198,13 @@ export default function McpAccess() {
 
           <details className="mt-4">
             <summary className="text-xs font-medium text-gray-700 dark:text-slate-300 cursor-pointer">
-              Claude Desktop (workaround)
+              Claude Desktop
             </summary>
             <p className="text-xs text-gray-500 dark:text-slate-400 mt-2 mb-2">
-              Desktop connectors only speak OAuth, which Cram does not offer yet, so this route runs{" "}
-              <span className="font-mono">mcp-remote</span> — a third-party bridge we do not control — and your token
-              passes through it. Add the block to <span className="font-mono">{DESKTOP_CONFIG_PATH}</span>, then quit
-              Claude Desktop completely (⌘Q) and reopen it; closing the window is not enough.
+              Add this block to <span className="font-mono">{DESKTOP_CONFIG_PATH}</span>, then quit Claude Desktop
+              completely (⌘Q) and reopen it — closing the window does not reload the config. It runs{" "}
+              <span className="font-mono">mcp-remote</span>, an open-source bridge that connects Desktop to a remote
+              server; your token is passed to it as an environment variable.
             </p>
             <Snippet code={desktopSnippet(freshToken)} />
           </details>
@@ -202,31 +228,69 @@ export default function McpAccess() {
               onChange={(e) => setName(e.target.value)}
               maxLength={100}
               placeholder="Claude on my laptop"
-              className="w-full text-sm px-3 py-2 rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 placeholder:text-gray-400"
+              className="w-full h-10 text-sm px-3 rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 placeholder:text-gray-400"
             />
           </div>
           <div>
             <label htmlFor="token-scope" className="block text-xs text-gray-500 dark:text-slate-400 mb-1">
               Access
             </label>
-            <select
-              id="token-scope"
-              value={scope}
-              onChange={(e) => setScope(e.target.value as TokenScope)}
-              className="text-sm px-3 py-2 rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100"
-            >
-              <option value="read_write">Read and write</option>
-              <option value="read">Read only</option>
-            </select>
+            {/* appearance-none: the native control draws its own corners and ignores the
+                radius, so it would not match the input and the button. Hence our own chevron. */}
+            <div className="relative">
+              <select
+                id="token-scope"
+                value={scope}
+                onChange={(e) => setScope(e.target.value as TokenScope)}
+                className="h-10 w-full appearance-none text-sm pl-3 pr-8 rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100"
+              >
+                <option value="read_write">Read and write</option>
+                <option value="read">Read only</option>
+              </select>
+              <svg
+                aria-hidden="true"
+                viewBox="0 0 20 20"
+                fill="none"
+                className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-slate-500"
+              >
+                <path d="M6 8l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </div>
           </div>
           <button
             type="submit"
             disabled={creating || !name.trim()}
-            className="text-sm font-medium px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition-colors disabled:opacity-40"
+            className="h-10 text-sm font-medium px-4 rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition-colors disabled:opacity-40"
           >
             {creating ? "Creating…" : "Create token"}
           </button>
         </form>
+      )}
+
+      {connections.length > 0 && (
+        <div className="mb-5">
+          <p className="text-xs font-medium text-gray-700 dark:text-slate-300 mb-2">Connected applications</p>
+          <ul className="divide-y divide-gray-100 dark:divide-slate-800">
+            {connections.map((c) => (
+              <li key={c.id} className="py-3 flex items-center justify-between gap-4">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium truncate text-gray-900 dark:text-slate-100">{c.client_name}</p>
+                  <p className="text-xs text-gray-500 dark:text-slate-400">
+                    {c.scope === "read" ? "Read only" : "Read and write"} · connected {formatDate(c.created_at)} · last
+                    used {formatDate(c.last_used_at)}
+                  </p>
+                </div>
+                <button
+                  onClick={() => disconnect(c.id)}
+                  disabled={disconnecting === c.id}
+                  className="shrink-0 text-xs font-medium px-3 py-1.5 rounded-lg border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors disabled:opacity-40"
+                >
+                  {disconnecting === c.id ? "Disconnecting…" : "Disconnect"}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
 
       {loading ? (
