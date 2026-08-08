@@ -19,6 +19,13 @@ export type SessionItem = {
   // speak immediately; otherwise (term is an answer option) speaking it before the
   // answer is revealed would spoil it, so the UI gates on submission.
   speakText?: string;
+  // The card's hint, revealed on request before answering. Cards only — quiz options
+  // already carry their own explanation, shown after the answer.
+  hint?: string;
+  // The correct answer is the card's term, so it is short enough to write from memory.
+  // A session may then ask a well-known card to be typed instead of picked. Never set on
+  // the reverse direction, where the answer is a whole definition.
+  typable?: boolean;
 };
 
 function shuffle<T>(arr: T[]): T[] {
@@ -52,6 +59,8 @@ export function fromCards(cards: Card[]): SessionItem[] {
         badge: { text: "Single answer", className: "bg-gray-100 text-gray-500" },
         sourceID: card.ID,
         sourceType: "card" as const,
+        hint: card.Hint,
+        typable: true,
       };
     })
   );
@@ -101,6 +110,10 @@ export function fromBlitz(result: BlitzResponse): SessionItem[] {
         sourceType: "card" as const,
         regenOptions: () => buildCardOptions(card.ID, correct),
         speakText: card.Term,
+        // Shown in either direction: a hint is guidance about the card, not its answer, so
+        // it stays useful whether the learner is picking the term or the definition.
+        hint: card.Hint,
+        typable: !reverse,
       };
     } else {
       const q = item.tq;

@@ -67,6 +67,13 @@ export default function MatchPage(props: PageProps<"/collections/[id]/match">) {
     if (a.cardId === b.cardId) {
       setMatched((prev) => new Set([...prev, a.id, b.id]));
       setFlipped([]);
+      // A completed pair counts as a correct answer for that card, like any other mode.
+      // Mismatches are not reported: turning over the wrong tile is how a memory board is
+      // explored, and a wrong answer halves the level. Repeat runs cannot inflate anything
+      // either — the server ignores a correct answer given before the card is due.
+      if (isLoggedIn() && collectionID) {
+        api.progress.update(collectionID, "card", a.cardId, true, 0).catch(() => {});
+      }
     } else {
       setLock(true);
       setWrong(new Set([a.id, b.id]));

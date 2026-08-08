@@ -6,6 +6,7 @@ import Link from "next/link";
 import { api, Collection, Card, TestQuestion, TestAnswer, Exercise, ProgressEntry, DraftDiffEntry } from "@/lib/api";
 import LevelDot from "@/components/LevelDot";
 import { isLoggedIn } from "@/lib/auth";
+import { fuzzyBest } from "@/lib/fuzzy";
 import Navbar from "@/components/Navbar";
 import ImageUpload from "@/components/ImageUpload";
 import { ExerciseBody } from "@/components/ExerciseWorksheet";
@@ -17,12 +18,15 @@ const inputCls = "border border-gray-300 dark:border-slate-600 bg-white dark:bg-
 const formCls = "bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl p-4 mb-3 flex flex-col gap-3";
 const btnBase = "text-sm px-3 py-1.5 rounded-lg border transition-colors disabled:opacity-60 font-medium";
 
+// Items per page in view mode. Long enough that most collections stay on one page.
+const PAGE_SIZE = 20;
+
 
 // Reconstruct the published DTO of a staged-for-deletion item, so deleted rows
 // render with the same markup as normal rows (just tinted red).
 function cardFromEntry(e: DraftDiffEntry): Card {
-  const c = (e.Before?.Content ?? {}) as { term?: string; definition?: string; image?: string };
-  return { ID: e.ItemID, CollectionID: "", Term: c.term ?? "", Definition: c.definition ?? "", Image: c.image ?? "", Position: 0, CreatedAt: "", UpdatedAt: "" };
+  const c = (e.Before?.Content ?? {}) as { term?: string; definition?: string; image?: string; hint?: string };
+  return { ID: e.ItemID, CollectionID: "", Term: c.term ?? "", Definition: c.definition ?? "", Hint: c.hint ?? "", Image: c.image ?? "", Position: 0, CreatedAt: "", UpdatedAt: "" };
 }
 function quizFromEntry(e: DraftDiffEntry): TestQuestion {
   const c = (e.Before?.Content ?? {}) as { question?: string; options?: TestAnswer[] };
@@ -62,54 +66,13 @@ function IconBtn({ emoji, title, onClick, danger, type = "button", form, disable
   );
 }
 
-// Mini-games playable over a collection's cards. Add new ones here — they show up
-// in the 🎮 menu and in the 🎲 Random pick automatically.
+// Mini-games playable over a collection's cards. Add one here and it becomes a button
+// next to Blitz — each game names itself rather than hiding behind a 🎮 menu.
 const MINI_GAMES: { emoji: string; label: string; slug: string }[] = [
   { emoji: "🃏", label: "Match", slug: "match" },
   { emoji: "🔗", label: "Connect", slug: "connect" },
+  { emoji: "⌨️", label: "Type", slug: "type" },
 ];
-
-// 🎮 menu next to Blitz: pick a mini-game (🎲 Random first). Disabled when the
-// collection has too few cards to play.
-function GamesMenu({ collectionID, disabled }: { collectionID: string; disabled?: boolean }) {
-  const router = useRouter();
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    function onDoc(e: MouseEvent) { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); }
-    document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
-  }, [open]);
-
-  const go = (slug: string) => { setOpen(false); router.push(`/collections/${collectionID}/${slug}`); };
-  const random = () => go(MINI_GAMES[Math.floor(Math.random() * MINI_GAMES.length)].slug);
-  const itemCls = "w-full text-left px-3 py-1.5 text-sm text-gray-700 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-800";
-
-  if (disabled) {
-    return <span title="Needs at least 5 cards" className="px-4 py-2 rounded-lg text-sm border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-400 dark:text-slate-600 cursor-not-allowed">🎮</span>;
-  }
-  return (
-    <div className="relative" ref={ref}>
-      <button
-        onClick={() => setOpen((o) => !o)}
-        title="Mini games"
-        aria-label="Mini games"
-        className="px-4 py-2 rounded-lg text-sm font-medium border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors"
-      >
-        🎮
-      </button>
-      {open && (
-        <div className="absolute z-20 mt-1 left-0 min-w-[10rem] rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-lg py-1">
-          <button onClick={random} className={itemCls}>🎲 Random</button>
-          {MINI_GAMES.map((g) => (
-            <button key={g.slug} onClick={() => go(g.slug)} className={itemCls}>{g.emoji} {g.label}</button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
 
 // Form fields box (used inside CardForm/TestForm; Save/Cancel live in a side panel).
 const formBox = "bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl p-4 flex flex-col gap-3 flex-1 min-w-0";
@@ -377,7 +340,7 @@ function AddItemModal({ collectionID, userRole, draft, onClose, onCardSave, onQu
   userRole?: string | null;
   draft?: boolean; // stage into the draft (edit) vs write live (view quick-add)
   onClose: () => void;
-  onCardSave: (term: string, definition: string, image: string) => void;
+  onCardSave: (term: string, definition: string, image: string, hint: string) => void;
   onQuizSave: (question: string, options: TestAnswer[], image: string) => void;
   onImported: () => void;
 }) {
@@ -414,7 +377,7 @@ function AddItemModal({ collectionID, userRole, draft, onClose, onCardSave, onQu
           ))}
         </div>
       ) : type === "card" ? (
-        <CardForm formId={FORM_ID} hideActions onSave={(t, d, i) => { onCardSave(t, d, i); onClose(); }} onCancel={() => setType(null)} userRole={userRole} />
+        <CardForm formId={FORM_ID} hideActions onSave={(t, d, i, h) => { onCardSave(t, d, i, h); onClose(); }} onCancel={() => setType(null)} userRole={userRole} />
       ) : type === "quiz" ? (
         <TestForm formId={FORM_ID} hideActions onSave={(q, o, i) => { onQuizSave(q, o, i); onClose(); }} onCancel={() => setType(null)} />
       ) : (
@@ -428,7 +391,7 @@ function AddItemModal({ collectionID, userRole, draft, onClose, onCardSave, onQu
 
 function CardForm({ initial, onSave, onCancel, userRole, formId, hideActions }: {
   initial?: Card;
-  onSave: (term: string, definition: string, image: string) => void;
+  onSave: (term: string, definition: string, image: string, hint: string) => void;
   onCancel: () => void;
   userRole?: string | null;
   formId?: string;      // lets an external Save button (modal header) submit this form
@@ -436,6 +399,7 @@ function CardForm({ initial, onSave, onCancel, userRole, formId, hideActions }: 
 }) {
   const [term, setTerm] = useState(initial?.Term ?? "");
   const [definition, setDefinition] = useState(initial?.Definition ?? "");
+  const [hint, setHint] = useState(initial?.Hint ?? "");
   const [image, setImage] = useState(initial?.Image ?? "");
   const [suggesting, setSuggesting] = useState(false);
   const canSuggest = userRole === "admin" || userRole === "pro";
@@ -456,7 +420,7 @@ function CardForm({ initial, onSave, onCancel, userRole, formId, hideActions }: 
   function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!term.trim() || !definition.trim()) return;
-    onSave(term.trim(), definition.trim(), image);
+    onSave(term.trim(), definition.trim(), image, hint.trim());
   }
 
   return (
@@ -472,6 +436,8 @@ function CardForm({ initial, onSave, onCancel, userRole, formId, hideActions }: 
             </button>
           )}
         </div>
+        {/* Optional: revealed on request while studying, so it must not restate the definition. */}
+        <input className={inputCls} placeholder="Hint (optional)" value={hint} onChange={(e) => setHint(e.target.value)} maxLength={2000} />
         <ImageUpload value={image} onChange={setImage} />
       </div>
       {!hideActions && (
@@ -606,6 +572,8 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
   const [isFollowed, setIsFollowed] = useState(false);
   const [followLoading, setFollowLoading] = useState(false);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set()); // view mode: cards/quiz whose answer is revealed
+  const [search, setSearch] = useState(""); // view mode: fuzzy filter over the item list
+  const [page, setPage] = useState(1);      // view mode: 1-based page of the item list
 
   function toggleExpand(id: string) {
     setExpandedIds((prev) => {
@@ -799,9 +767,10 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
 
   // ── Granular draft operations (edit mode) — each stages into item_draft ───────
 
-  const cardBody = (term: string, definition: string, image: string) => ({
+  const cardBody = (term: string, definition: string, image: string, hint: string) => ({
     type: "card",
-    content: { term, definition, ...(image ? { image } : {}) },
+    // image and hint are written only when set, so a card without them keeps the shape it had.
+    content: { term, definition, ...(image ? { image } : {}), ...(hint ? { hint } : {}) },
   });
   const quizBody = (question: string, options: TestAnswer[], image: string) => ({
     type: "exercise",
@@ -813,15 +782,15 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
     },
   });
 
-  async function addCard(term: string, definition: string, image: string) {
+  async function addCard(term: string, definition: string, image: string, hint: string) {
     if (!collection) return;
-    await api.drafts.addItem(collection.ID, cardBody(term, definition, image));
+    await api.drafts.addItem(collection.ID, cardBody(term, definition, image, hint));
     await refreshDraft(collection.ID);
     closeAllForms();
   }
-  async function updateCard(term: string, definition: string, image: string) {
+  async function updateCard(term: string, definition: string, image: string, hint: string) {
     if (!collection || !editingCard) return;
-    await api.drafts.updateItem(collection.ID, editingCard.ID, cardBody(term, definition, image));
+    await api.drafts.updateItem(collection.ID, editingCard.ID, cardBody(term, definition, image, hint));
     await refreshDraft(collection.ID);
     setEditingCard(null);
   }
@@ -879,9 +848,9 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
   // ── Immediate actions (view mode, owner only) ────────────────────────────────
 
   // Quick-add: write a single item straight to the published collection (no draft).
-  async function quickAddCard(term: string, definition: string, image: string) {
+  async function quickAddCard(term: string, definition: string, image: string, hint: string) {
     if (!collection) return;
-    await api.cards.add(collection.ID, term, definition, image, (collection.Cards ?? []).length);
+    await api.cards.add(collection.ID, term, definition, image, hint, (collection.Cards ?? []).length);
     setCollection(await api.collections.get(collection.ID));
   }
 
@@ -1030,24 +999,47 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
         ...quizzes.map((q) => ({ kind: "quiz" as const, id: q.ID, del: false, quiz: q })),
         ...exercises.map((x) => ({ kind: "exercise" as const, id: x.ID, del: false, ex: x })),
       ].sort((a, b) => cmpRank(a.id, b.id));
+  // Everything a search should look at, per item — the answer side included, since a user
+  // hunting for "the card about mutexes" may only remember the definition.
+  const searchable = (entry: (typeof listItems)[number]): string[] =>
+    entry.kind === "card"
+      ? [entry.card.Term, entry.card.Definition, entry.card.Hint]
+      : entry.kind === "quiz"
+      ? [entry.quiz.Question, ...entry.quiz.Options.map((o) => o.text)]
+      : entry.ex.Kind === "quiz"
+      ? [entry.ex.Title, entry.ex.Question, ...entry.ex.Options.map((o) => o.text)]
+      : [entry.ex.Title, ...entry.ex.Sentences.map((sn) => sn.text)];
+
+  // Fuzzy filter, best matches first. Edit mode is deliberately excluded: a reorder computes
+  // the new rank from an item's neighbours in the rendered list, so a filtered list would
+  // hand it the wrong ones.
+  const query = search.trim();
+  const visibleItems = editMode || query === ""
+    ? listItems
+    : listItems
+        .map((entry, i) => ({ entry, i, score: fuzzyBest(query, searchable(entry)) }))
+        .filter((r): r is { entry: (typeof listItems)[number]; i: number; score: number } => r.score !== null)
+        .sort((a, b) => b.score - a.score || a.i - b.i)
+        .map((r) => r.entry);
+
+  // Pages come after the search, so a query still sees the whole collection and only its
+  // results are sliced. Edit mode is unpaged for the same reason it is unfiltered.
+  const pageCount = Math.max(1, Math.ceil(visibleItems.length / PAGE_SIZE));
+  // Clamped rather than stored: the list shrinks as a query narrows, and a page number left
+  // pointing past the end would render nothing.
+  const currentPage = Math.min(page, pageCount);
+  const pagedItems = editMode ? visibleItems : visibleItems.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+
   // View mode: cards & quiz collapse to their prompt; expand reveals the answer.
-  const collapsibleIds = editMode ? [] : listItems.filter((e) => e.kind === "card" || e.kind === "quiz").map((e) => e.id);
+  const collapsibleIds = editMode ? [] : pagedItems.filter((e) => e.kind === "card" || e.kind === "quiz").map((e) => e.id);
   const allExpanded = collapsibleIds.length > 0 && collapsibleIds.every((id) => expandedIds.has(id));
   // Mixed collections: capability by content presence, not a single collection type.
-  const hasExercises = allExercises.length > 0;
   const itemCount = cards.length + allExercises.length;
   const hasFlip = cards.length >= 2;               // flip-card mode needs ≥2 cards
   const hasBlitz = cards.length >= 1;              // blitz is cards-only
   const hasMatch = cards.length >= 5;              // matching mini-game needs ≥5 pairs
   const allItemKeys = cards.map((c) => `card:${c.ID}`); // progress is card-only
   const allMastered = allItemKeys.length > 0 && allItemKeys.every((k) => itemProgress[k]?.level === 7);
-  const now = new Date();
-  const dueCount = allItemKeys.filter((k) => {
-    const p = itemProgress[k];
-    if (!p) return true; // never seen — due (matches backend GetBlitz)
-    if (p.level === 7) return false; // mastered — not due
-    return !p.next_review_at || new Date(p.next_review_at) <= now;
-  }).length;
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -1113,17 +1105,27 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
                 <span className="bg-indigo-300 dark:bg-indigo-900 text-white px-4 py-2 rounded-lg text-sm font-medium cursor-not-allowed opacity-60">Blitz</span>
               ) : (
                 <Link href={`/collections/${collection.ID}/blitz`} className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors">
-                  Blitz{dueCount > 0 && ` (${dueCount})`}
+                  Blitz
                 </Link>
               )
             )}
-            {cards.length >= 1 && <GamesMenu collectionID={collection.ID} disabled={!hasMatch} />}
+            {cards.length >= 1 && MINI_GAMES.map((g) => (
+              hasMatch ? (
+                <Link key={g.slug} href={`/collections/${collection.ID}/${g.slug}`} title={g.label} aria-label={g.label} className="bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors">
+                  {g.emoji}
+                </Link>
+              ) : (
+                <span key={g.slug} title={`${g.label} needs at least 5 cards`} aria-label={g.label} className="px-4 py-2 rounded-lg text-sm font-medium border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 opacity-40 cursor-not-allowed">
+                  {g.emoji}
+                </span>
+              )
+            ))}
             {hasFlip && (
               <Link href={`/collections/${collection.ID}/cards`} className="bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors">Cards</Link>
             )}
-            {hasExercises && (
-              <Link href={`/collections/${collection.ID}/exercises`} className="bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors">Exercise</Link>
-            )}
+            {/* No Exercise button: unanswered exercises open at the start of Blitz. Redoing an
+                answered one goes through the editor's reset, which is what clears the saved
+                answers blitz reads. */}
             {currentUserID !== null && !isOwner && (
               <button
                 onClick={toggleFollow}
@@ -1188,10 +1190,40 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
           />
         )}
 
+        {/* Search: view mode only, and only once the list is long enough to be worth hunting
+            through. Filtering is local — the whole collection is already in memory. */}
+        {!editMode && listItems.length >= 5 && (
+          <div className="relative mb-4">
+            {/* Decorative: the placeholder already says what the field is, so the glass is
+                hidden from screen readers and does not swallow clicks aimed at the input. */}
+            <span aria-hidden className="absolute left-3 top-1/2 -translate-y-1/2 text-sm pointer-events-none select-none">🔍</span>
+            <input
+              value={search}
+              onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+              placeholder="Search…"
+              aria-label="Search items"
+              data-testid="item-search"
+              className={inputCls + " w-full pl-9 pr-9"}
+            />
+            {search && (
+              <button
+                onClick={() => { setSearch(""); setPage(1); }}
+                aria-label="Clear search"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300 text-sm px-1"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+        )}
+        {!editMode && query !== "" && visibleItems.length === 0 && (
+          <p className="text-sm text-gray-400 dark:text-slate-500 mb-8">Nothing matches “{query}”.</p>
+        )}
+
         {/* ── Unified item list (edit + view) ── */}
-        {(listItems.length > 0 || editMode) && (
+        {(pagedItems.length > 0 || editMode) && (
           <ul className="flex flex-col gap-3 mb-8">
-            {listItems.map((entry) => {
+            {pagedItems.map((entry) => {
               if (editMode && entry.kind === "card" && !entry.del && editingCard?.ID === entry.id) {
                 return <li key={entry.id}><CardForm initial={entry.card} onSave={updateCard} onCancel={() => setEditingCard(null)} userRole={currentUserRole} /></li>;
               }
@@ -1247,7 +1279,12 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
                     <div className="text-gray-900 dark:text-slate-100">{entry.card.Term}</div>
                     {/* animated reveal: grid rows 0fr → 1fr */}
                     <div className={`grid transition-[grid-template-rows] duration-200 ease-out ${showAnswer ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
-                      <div className="overflow-hidden"><div className="text-gray-600 dark:text-slate-400 text-sm mt-1">{entry.card.Definition}</div></div>
+                      <div className="overflow-hidden">
+                        <div className="text-gray-600 dark:text-slate-400 text-sm mt-1">{entry.card.Definition}</div>
+                        {/* The hint rides along with the answer here — this list is for reviewing
+                            and editing content, not for testing yourself on it. */}
+                        {entry.card.Hint && <div className="text-gray-400 dark:text-slate-500 text-xs mt-1">{entry.card.Hint}</div>}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1304,6 +1341,27 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
             })}
             {editMode && listItems.length === 0 && <p className="text-sm text-gray-400 dark:text-slate-500">No items yet — use “Add item” or “Import”.</p>}
           </ul>
+        )}
+
+        {/* Pager: only when there is a second page to go to. */}
+        {!editMode && pageCount > 1 && (
+          <div className="flex items-center justify-center gap-3 mb-8">
+            <button
+              onClick={() => setPage(currentPage - 1)}
+              disabled={currentPage === 1}
+              className={`${btnBase} border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700`}
+            >
+              ←
+            </button>
+            <span data-testid="page-indicator" className="text-sm text-gray-500 dark:text-slate-400">{currentPage} / {pageCount}</span>
+            <button
+              onClick={() => setPage(currentPage + 1)}
+              disabled={currentPage === pageCount}
+              className={`${btnBase} border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700`}
+            >
+              →
+            </button>
+          </div>
         )}
 
         {/* ── Owner actions (view mode only) ── */}

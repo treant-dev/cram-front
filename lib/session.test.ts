@@ -2,8 +2,8 @@ import { describe, it, expect } from "vitest";
 import { fromCards, fromBlitz } from "./session";
 import type { Card, BlitzResponse } from "./api";
 
-function card(id: string, term: string, definition: string): Card {
-  return { ID: id, CollectionID: "c", Term: term, Definition: definition, Image: "", Position: 0, CreatedAt: "", UpdatedAt: "" };
+function card(id: string, term: string, definition: string, hint = ""): Card {
+  return { ID: id, CollectionID: "c", Term: term, Definition: definition, Hint: hint, Image: "", Position: 0, CreatedAt: "", UpdatedAt: "" };
 }
 
 const deck: Card[] = [
@@ -63,5 +63,17 @@ describe("fromBlitz", () => {
       expect(it.speakText).toBe(src.Term);
       expect(it.options.length).toBeLessThanOrEqual(4);
     }
+  });
+
+  // A hint describes the card, not the side being asked about, so it survives either
+  // direction — the session UI decides whether to offer it, not the builder.
+  it("carries a card's hint in both directions", () => {
+    const hinted = card("h", "der Löffel", "spoon", "masculine");
+    const items = fromBlitz({
+      items: [{ type: "card" as const, card: hinted }],
+      card_pool: [{ ID: hinted.ID, Term: hinted.Term, Definition: hinted.Definition }],
+    });
+    expect(items[0].hint).toBe("masculine");
+    expect(fromCards([hinted])[0].hint).toBe("masculine");
   });
 });

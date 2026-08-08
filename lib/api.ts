@@ -108,6 +108,9 @@ export type Card = {
   CollectionID: string;
   Term: string;
   Definition: string;
+  // Optional guidance the learner can reveal while studying — a mnemonic, a warning about an
+  // irregular form. Empty string when the card has none.
+  Hint: string;
   Image: string;
   Position: number;
   CreatedAt: string;
@@ -353,10 +356,10 @@ export const api = {
       request<void>(`/admin/collections/${collectionID}`, { method: "DELETE" }),
   },
   cards: {
-    add: (collectionID: string, term: string, definition: string, image: string, position: number) =>
-      request<Card>(`/collections/${collectionID}/cards`, { method: "POST", body: JSON.stringify({ term, definition, image, position }) }),
-    update: (collectionID: string, cardID: string, term: string, definition: string, position: number) =>
-      request<Card>(`/collections/${collectionID}/cards/${cardID}`, { method: "PUT", body: JSON.stringify({ term, definition, position }) }),
+    add: (collectionID: string, term: string, definition: string, image: string, hint: string, position: number) =>
+      request<Card>(`/collections/${collectionID}/cards`, { method: "POST", body: JSON.stringify({ term, definition, image, hint, position }) }),
+    update: (collectionID: string, cardID: string, term: string, definition: string, hint: string, position: number) =>
+      request<Card>(`/collections/${collectionID}/cards/${cardID}`, { method: "PUT", body: JSON.stringify({ term, definition, hint, position }) }),
     delete: (collectionID: string, cardID: string) =>
       request<void>(`/collections/${collectionID}/cards/${cardID}`, { method: "DELETE" }),
     import: (collectionID: string, file: File) => {
