@@ -14,6 +14,9 @@ async function login(page: import("@playwright/test").Page) {
 // Test markers for items created by the import test — used for cleanup so runs don't
 // accumulate cards/quizzes in the shared seed collection.
 const E2E_CARD_TERM = "e2e-import-term";
+// Whole-text matcher. Playwright's hasText takes a string as a substring, so short seed
+// values ("go") match longer tiles; an anchored regex keeps a tile lookup exact.
+const exact = (text: string) => new RegExp(`^\\s*${text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*$`);
 const E2E_QUIZ_QUESTION = "e2e quiz?";
 
 // After every test, delete any items the suite created (identified by their markers)
@@ -49,13 +52,10 @@ test("collection detail shows card content via the item model", async ({ page })
 test("quizzes (former tests) are exercises, done via the Exercise session", async ({ page }) => {
   test.setTimeout(60_000);
   await login(page);
-  await page.getByText("Go Basics").first().click();
-  await page.waitForURL(/\/collections\/[0-9a-f-]+$/);
-  // Collection page offers the Exercise study button (quizzes aren't inline anymore).
-  const exercise = page.getByRole("link", { name: /^exercise$/i });
-  await expect(exercise).toBeVisible({ timeout: 30_000 });
-  await exercise.click();
-  await page.waitForURL(/\/exercises$/);
+  const cols = await (await page.request.get(`${API}/collections`)).json();
+  const go = (cols as Array<{ ID: string; Title: string }>).find((c) => c.Title === "Go Basics");
+  expect(go, "seed collection present").toBeTruthy();
+  await page.goto(`/collections/${go!.ID}/exercises`);
   // The quiz renders as a QuizBlock in the session. It's a stepper (one block at a time),
   // so the quiz may not be the current slot — assert it's rendered, not necessarily shown.
   await expect(page.getByText("Which of the following declares a variable in Go?").first()).toBeAttached({ timeout: 30_000 });
@@ -221,11 +221,10 @@ test("Match game: enabled with ≥5 cards, board renders and tiles flip", async 
   const expectedTiles = 2 * Math.min(cardCount, 10);
 
   await page.goto(`/collections/${go!.ID}`);
-  // Match lives in the 🎮 games menu now.
-  const gamesBtn = page.getByRole("button", { name: "Mini games" });
-  await expect(gamesBtn).toBeVisible({ timeout: 30_000 });
-  await gamesBtn.click();
-  await page.getByRole("button", { name: /Match/ }).click();
+  // Each mini-game is its own button next to Blitz.
+  const matchBtn = page.getByRole("link", { name: /Match/ });
+  await expect(matchBtn).toBeVisible({ timeout: 30_000 });
+  await matchBtn.click();
   await page.waitForURL(/\/match$/);
 
   const tiles = page.getByTestId("match-tile");
@@ -269,12 +268,12 @@ test("Match game: inactive when a collection has fewer than 5 cards", async ({ p
   expect((detail.Cards ?? []).length, "Private Notes should have <5 cards").toBeLessThan(5);
 
   await page.goto(`/collections/${pn!.ID}`);
-  // The 🎮 games menu is shown but inactive — rendered as plain text, not a button.
-  await expect(page.getByText("🎮")).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByRole("button", { name: "Mini games" })).toHaveCount(0);
+  // The mini-game buttons are shown but inactive — rendered as plain text, not links.
+  await expect(page.getByLabel("Match")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole("link", { name: /Match/ })).toHaveCount(0);
 });
 
-test("Connect game: link matching pairs via the 🎮 menu, Check reports all correct", async ({ page }) => {
+test("Connect game: link matching pairs, Check reports all correct", async ({ page }) => {
   test.setTimeout(60_000);
   await login(page);
   const cols = await (await page.request.get(`${API}/collections`)).json();
@@ -286,27 +285,168 @@ test("Connect game: link matching pairs via the 🎮 menu, Check reports all cor
   expect(cards.length).toBeLessThanOrEqual(7);
 
   await page.goto(`/collections/${go!.ID}`);
-  await page.getByRole("button", { name: "Mini games" }).click();
-  await page.getByRole("button", { name: /Connect/ }).click();
+  await page.getByRole("link", { name: /Connect/ }).click();
   await page.waitForURL(/\/connect$/);
   await expect(page.getByTestId("connect-term")).toHaveCount(cards.length, { timeout: 30_000 });
 
   // Link each card's term to its definition (both are visible on the board).
   for (const c of cards) {
-    await page.getByTestId("connect-term").filter({ hasText: c.Term }).first().click();
-    await page.getByTestId("connect-def").filter({ hasText: c.Definition }).first().click();
+    await page.getByTestId("connect-term").filter({ hasText: exact(c.Term) }).first().click();
+    await page.getByTestId("connect-def").filter({ hasText: exact(c.Definition) }).first().click();
   }
   await page.getByRole("button", { name: "Check" }).click();
   await expect(page.getByText(`${cards.length} / ${cards.length} correct`)).toBeVisible({ timeout: 10_000 });
 });
 
-test("blitz session loads a card question", async ({ page }) => {
+test("blitz session loads a card question once the exercises are done", async ({ page }) => {
+  test.setTimeout(60_000);
   await login(page);
-  await page.getByText("Go Basics").first().click();
-  await page.waitForURL(/\/collections\/[0-9a-f-]+$/);
+  const cols = await (await page.request.get(`${API}/collections`)).json();
+  const go = (cols as Array<{ ID: string; Title: string }>).find((c) => c.Title === "Go Basics");
+  expect(go, "seed collection present").toBeTruthy();
+  const detail = await (await page.request.get(`${API}/collections/${go!.ID}`)).json();
+  const exs = (detail.Exercises ?? []) as Array<{ ID: string; Kind: string; Options?: { text: string; is_correct: boolean }[]; Sentences?: { id: string; answer: string[] }[] }>;
+
+  // Blitz runs unanswered exercises before the cards, so answer them first — this test is
+  // about the card phase.
+  const results = exs.flatMap((e) =>
+    e.Kind === "quiz"
+      ? [{ sentence_id: e.ID, correct: true, submitted: [e.Options!.find((o) => o.is_correct)!.text] }]
+      : e.Sentences!.map((sn) => ({ sentence_id: sn.id, correct: true, submitted: sn.answer }))
+  );
+  const rec = await page.request.post(`${API}/collections/${go!.ID}/exercises/results`, { data: { results } });
+  expect(rec.ok()).toBeTruthy();
+
+  await page.goto(`/collections/${go!.ID}`);
   const blitz = page.getByRole("link", { name: /blitz/i }).or(page.getByRole("button", { name: /blitz/i }));
   await blitz.first().click();
   await page.waitForURL(/\/blitz/);
   // Blitz renders one of the seed card definitions/terms as the prompt.
   await expect(page.locator("body")).toContainText(/goroutine|defer|channel|pointer/i);
+});
+
+// ── Search, paging and the typing game, all over the 30-word dictionary ──────────────
+
+async function dictionary(page: import("@playwright/test").Page) {
+  const cols = await (await page.request.get(`${API}/public/collections`)).json();
+  const dict = (cols as Array<{ ID: string; Title: string }>).find((c) => c.Title === "English Vocabulary");
+  expect(dict, "seed dictionary present").toBeTruthy();
+  return dict!.ID;
+}
+
+test("collection search filters the list and clears again", async ({ page }) => {
+  test.setTimeout(60_000);
+  await login(page);
+  const id = await dictionary(page);
+  await page.goto(`/collections/${id}`);
+
+  const search = page.getByTestId("item-search");
+  await expect(search).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText("vivid")).toHaveCount(0); // page 2 material
+
+  // Fuzzy: a subsequence of the term is enough, and it is found wherever it lives.
+  await search.fill("vvd");
+  await expect(page.getByText("vivid").first()).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByText("abundant")).toHaveCount(0);
+
+  await page.getByLabel("Clear search").click();
+  await expect(page.getByText("abundant").first()).toBeVisible();
+});
+
+test("collection list pages at 20 items", async ({ page }) => {
+  test.setTimeout(60_000);
+  await login(page);
+  const id = await dictionary(page);
+  await page.goto(`/collections/${id}`);
+
+  const indicator = page.getByTestId("page-indicator");
+  await expect(indicator).toHaveText("1 / 2", { timeout: 30_000 });
+  // 30 words: twenty on the first page, the rest on the second.
+  await expect(page.getByText("abundant").first()).toBeVisible();
+  await expect(page.getByText("vivid")).toHaveCount(0);
+
+  await page.getByRole("button", { name: "→" }).click();
+  await expect(indicator).toHaveText("2 / 2");
+  await expect(page.getByText("vivid").first()).toBeVisible();
+  await expect(page.getByText("abundant")).toHaveCount(0);
+});
+
+test("typing game: seven cards, wrong answer shows the term", async ({ page }) => {
+  test.setTimeout(60_000);
+  await login(page);
+  const id = await dictionary(page);
+  await page.goto(`/collections/${id}/type`);
+
+  const input = page.getByTestId("type-input");
+  await expect(input).toBeVisible({ timeout: 30_000 });
+  // A round is capped at seven cards even though the deck holds thirty.
+  await expect(page.getByText("1 / 7")).toBeVisible();
+
+  await input.fill("definitely not the term");
+  await page.getByRole("button", { name: "Check" }).click();
+  await expect(page.getByTestId("type-answer")).toBeVisible({ timeout: 10_000 });
+
+  await page.getByRole("button", { name: /^Next/ }).click();
+  await expect(page.getByText("2 / 7")).toBeVisible();
+});
+
+test("flashcards show a card's hint on the back, in its own card", async ({ page }) => {
+  test.setTimeout(60_000);
+  await login(page);
+  const cols = await (await page.request.get(`${API}/collections`)).json();
+  const go = (cols as Array<{ ID: string; Title: string }>).find((c) => c.Title === "Go Basics");
+  expect(go, "seed collection present").toBeTruthy();
+
+  await page.goto(`/collections/${go!.ID}/cards`);
+  const term = page.getByText(/^(What|Which|Zero)/).first();
+  await expect(term).toBeVisible({ timeout: 30_000 });
+  // Front: no hint. Flip through the deck until a card with one turns up — four of the
+  // five seed cards have a hint, so this lands well inside the deck.
+  await expect(page.getByTestId("hint-card")).toHaveCount(0);
+  for (let i = 0; i < 5; i++) {
+    await page.keyboard.press("Space");
+    if (await page.getByTestId("hint-card").count()) break;
+    await page.keyboard.press("Enter"); // next card, front side
+  }
+  await expect(page.getByTestId("hint-card")).toBeVisible();
+});
+
+test("match: a completed pair is recorded as progress", async ({ page }) => {
+  test.setTimeout(90_000);
+  await login(page);
+  const cols = await (await page.request.get(`${API}/collections`)).json();
+  const go = (cols as Array<{ ID: string; Title: string }>).find((c) => c.Title === "Go Basics");
+  expect(go, "seed collection present").toBeTruthy();
+  // Start from a known state: no levels at all for this collection.
+  await page.request.delete(`${API}/collections/${go!.ID}/progress`);
+
+  const detail = await (await page.request.get(`${API}/collections/${go!.ID}`)).json();
+  const cards = (detail.Cards ?? []) as Array<{ ID: string; Term: string; Definition: string }>;
+
+  await page.goto(`/collections/${go!.ID}/match`);
+  const terms = page.getByTestId("match-side").first().getByTestId("match-tile");
+  const defs = page.getByTestId("match-side").last().getByTestId("match-tile");
+  await expect(terms.first()).toBeVisible({ timeout: 30_000 });
+
+  // Face-down tiles render "?", so the pair cannot be located up front — open the first
+  // term and try definitions until one sticks. A mismatch hides both again after its
+  // reveal window, so the term is reopened before the next try.
+  const term = terms.first();
+  await term.click();
+  const shownTerm = (await term.innerText()).trim();
+  let matched = false;
+  for (let j = 0; j < (await defs.count()); j++) {
+    await defs.nth(j).click();
+    await page.waitForTimeout(1500); // MISMATCH_MS plus a margin
+    if ((await term.getAttribute("data-facing")) === "up") { matched = true; break; }
+    await term.click();
+  }
+  expect(matched, "one pair was completed").toBeTruthy();
+
+  const card = cards.find((c) => c.Term === shownTerm);
+  expect(card, `board term "${shownTerm}" is a card of the collection`).toBeTruthy();
+  await expect(async () => {
+    const prog = await (await page.request.get(`${API}/collections/${go!.ID}/progress`)).json();
+    expect(prog.cards[card!.ID]?.level, "matched card rose from level 1").toBe(2);
+  }).toPass({ timeout: 15_000 });
 });

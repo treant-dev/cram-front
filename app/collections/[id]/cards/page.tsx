@@ -95,15 +95,18 @@ export default function CardsPage(props: PageProps<"/collections/[id]/cards">) {
   return (
     <div className="min-h-screen flex flex-col">
       <Navbar />
-      <main className="flex-1 flex flex-col items-center justify-center px-4 gap-3">
-        <div className="relative w-full max-w-lg flex items-center justify-end">
+      {/* Three rows with equal 1fr above and below pin the card itself to the middle of the
+          screen: the hint appearing underneath grows into the bottom row instead of pushing
+          the card up, so flipping never moves it. */}
+      <main className="flex-1 grid grid-rows-[1fr_auto_1fr] px-4">
+        <div className="self-end mx-auto mb-3 relative w-full max-w-lg flex items-center justify-end">
           <p className="absolute left-1/2 -translate-x-1/2 text-xs text-gray-400 dark:text-slate-500 uppercase tracking-wide">{flipped ? "Back" : "Front"}</p>
           <p className="text-sm text-gray-400 dark:text-slate-500">{index + 1} / {cards.length}</p>
         </div>
 
         <div
           onClick={flip}
-          className="relative cursor-pointer w-full max-w-lg min-h-48 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-2xl shadow-sm flex flex-col items-center justify-center p-8 text-center select-none hover:shadow-md dark:hover:border-slate-600 transition-all gap-4"
+          className="relative cursor-pointer mx-auto w-full max-w-lg min-h-48 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-2xl shadow-sm flex flex-col items-center justify-center p-8 text-center select-none hover:shadow-md dark:hover:border-slate-600 transition-all gap-4"
         >
           <SpeakButton text={card.Term} className="absolute top-3 right-3" />
           {card.Image && !flipped && (
@@ -114,14 +117,28 @@ export default function CardsPage(props: PageProps<"/collections/[id]/cards">) {
           </p>
         </div>
 
-        <div className="w-full max-w-lg flex items-center justify-between">
-          <p className="text-xs text-gray-400 dark:text-slate-500">Space to flip · Enter for next</p>
-          <button
-            onClick={next}
-            className="bg-indigo-600 text-white px-4 py-1.5 rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors"
-          >
-            {index + 1 >= cards.length ? "Finish" : "Next →"}
-          </button>
+        <div className="self-start mx-auto mt-3 w-full max-w-lg flex flex-col gap-3">
+          {/* A card of its own under the back side: the hint is about the card, not part of the
+              answer, and sharing one box made it read as a footnote to the definition. No reveal
+              button here — flipping already gave the answer away. */}
+          {flipped && card.Hint && (
+            <div
+              data-testid="hint-card"
+              className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-2xl shadow-sm px-6 py-4 text-center"
+            >
+              <p className="text-sm text-gray-500 dark:text-slate-400">{card.Hint}</p>
+            </div>
+          )}
+
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-gray-400 dark:text-slate-500">Space to flip · Enter for next</p>
+            <button
+              onClick={next}
+              className="bg-indigo-600 text-white px-4 py-1.5 rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors"
+            >
+              {index + 1 >= cards.length ? "Finish" : "Next →"}
+            </button>
+          </div>
         </div>
       </main>
     </div>

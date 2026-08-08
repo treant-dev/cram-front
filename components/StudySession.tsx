@@ -8,7 +8,12 @@ import SpeakButton from "@/components/SpeakButton";
 import LevelDot from "@/components/LevelDot";
 import { api, type ProgressEntry } from "@/lib/api";
 import { isLoggedIn } from "@/lib/auth";
+import { isTypedCorrect } from "@/lib/typing";
 import type { SessionItem } from "@/lib/session";
+
+// From this level on, a card is asked to be written rather than picked: recognising one of
+// four options stops proving anything once the answer is this well known.
+const TYPE_FROM_LEVEL = 5;
 
 type Props = {
   items: SessionItem[];
@@ -75,6 +80,12 @@ export default function StudySession({ items, collectionID, doneTitle, error, re
   const [isCorrect, setIsCorrect] = useState(false);
   const [score, setScore] = useState(0);
   const [done, setDone] = useState(false);
+  // Per item: unlocked by the first press, then shown only while asked for (hover or hold).
+  // Asking for a hint costs nothing — the learner still picks the answer — so neither flag
+  // is fed into scoring or into progress.
+  const [hintUnlocked, setHintUnlocked] = useState(false);
+  const [hintVisible, setHintVisible] = useState(false);
+  const [typed, setTyped] = useState(""); // the written answer, when this step is typed
 
   // Progress state: keyed by "card:<id>" or "tq:<id>"
   const [progress, setProgress] = useState<Record<string, ProgressEntry>>({});
@@ -89,6 +100,9 @@ export default function StudySession({ items, collectionID, doneTitle, error, re
     setQueue(items);
     setTotal(items.length);
     setIndex(0);
+    setHintUnlocked(false);
+    setHintVisible(false);
+    setTyped("");
   }
 
   useEffect(() => {
@@ -111,11 +125,18 @@ export default function StudySession({ items, collectionID, doneTitle, error, re
   const item = queue[index];
   const currentEntry = item ? (progress[`${item.sourceType}:${item.sourceID}`] ?? null) : null;
   const currentLevel = currentEntry?.level ?? 1;
+  // Written step: only for cards whose answer is the term (never the reverse direction,
+  // where it would mean writing out a whole definition) and only once well known.
+  const typingStep = !!item?.typable && currentLevel >= TYPE_FROM_LEVEL;
+  const expected = item?.options.find((o) => o.isCorrect)?.text ?? "";
+  const answered = typingStep ? typed.trim() !== "" : selected.size > 0;
 
   const submit = useCallback(() => {
-    if (submitted || selected.size === 0 || !item) return;
+    if (submitted || !item || !answered) return;
     const correctSet = new Set(item.options.filter((o) => o.isCorrect).map((o) => o.text));
-    const correct = selected.size === correctSet.size && [...selected].every((s) => correctSet.has(s));
+    const correct = typingStep
+      ? isTypedCorrect(typed, expected)
+      : selected.size === correctSet.size && [...selected].every((s) => correctSet.has(s));
     setIsCorrect(correct);
     setSubmitted(true);
     // On a retry, a correct answer redeems +1 (the wrong first attempt already
@@ -129,7 +150,7 @@ export default function StudySession({ items, collectionID, doneTitle, error, re
     // Score counts first attempts only; retries are practice.
     if (item.isRetry) return;
     if (correct) setScore((sc) => sc + 1);
-  }, [submitted, selected, item, currentLevel]);
+  }, [submitted, selected, item, currentLevel, answered, typingStep, typed, expected]);
 
   const next = useCallback(() => {
     if (!item) return;
@@ -171,6 +192,9 @@ export default function StudySession({ items, collectionID, doneTitle, error, re
     setSubmitted(false);
     setDisplayLevel(null);
     setConfidenceDelta(null);
+    setHintUnlocked(false);
+    setHintVisible(false);
+    setTyped("");
   }, [index, queue, item, isCorrect, confidenceDelta, displayLevel, currentLevel, collectionID, requeueWrongCards]);
 
   function handleConfidence(delta: -1 | 1) {
@@ -195,14 +219,20 @@ export default function StudySession({ items, collectionID, doneTitle, error, re
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (!item) return;
-      const num = parseInt(e.key);
-      if (num >= 1 && num <= item.options.length) { e.preventDefault(); toggle(item.options[num - 1].text); }
-      if (e.code === "Enter") { e.preventDefault(); submitted ? next() : selected.size > 0 && submit(); }
+      // While a step is written, every key belongs to the answer — no option numbers, and
+      // no h shortcut for the hint (the bulb is still there to press).
+      if (!typingStep) {
+        const num = parseInt(e.key);
+        if (num >= 1 && num <= item.options.length) { e.preventDefault(); toggle(item.options[num - 1].text); }
+        // Keyboard has no hold gesture, so h toggles instead: press to read, press again to hide.
+        if (e.key === "h" && item.hint) { e.preventDefault(); setHintUnlocked(true); setHintVisible((v) => !v); }
+      }
+      if (e.code === "Enter") { e.preventDefault(); submitted ? next() : answered && submit(); }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [item, submitted, selected, submit, next]);
+  }, [item, submitted, selected, submit, next, typingStep, answered]);
 
   if (error) {
     return (
@@ -277,24 +307,97 @@ export default function StudySession({ items, collectionID, doneTitle, error, re
             <p className="text-xl font-semibold text-gray-900 dark:text-slate-100">{item.question}</p>
           </div>
 
-          <div className="flex flex-col gap-2">
-            {item.options.map((opt, i) => (
-              <OptionButton
-                key={i}
-                index={i}
-                text={opt.text}
-                multi={item.multi}
-                selected={selected.has(opt.text)}
-                submitted={submitted}
-                isCorrect={opt.isCorrect}
-                explanation={opt.explanation}
-                onClick={() => toggle(opt.text)}
-              />
-            ))}
-          </div>
+          {typingStep ? (
+            <div className="flex flex-col gap-2">
+              <div className="relative">
+                <span aria-hidden className="absolute left-4 top-1/2 -translate-y-1/2 text-lg pointer-events-none select-none">⌨️</span>
+                <input
+                  value={typed}
+                  onChange={(e) => setTyped(e.target.value)}
+                  readOnly={submitted}
+                  placeholder="Write the answer…"
+                  aria-label="Write the answer"
+                  data-testid="type-input"
+                  autoFocus
+                  autoComplete="off"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  className={`w-full rounded-xl border pl-12 pr-4 py-3 text-left text-lg focus:outline-none placeholder:text-gray-400 dark:placeholder:text-slate-500 ${
+                    !submitted
+                      ? "border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100"
+                      : isCorrect
+                      ? "border-green-400 dark:border-green-600 bg-green-50 dark:bg-green-900/20 text-green-800 dark:text-green-300"
+                      : "border-red-400 dark:border-red-600 bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-300"
+                  }`}
+                />
+              </div>
+              {submitted && !isCorrect && (
+                <p data-testid="type-answer" className="text-center text-sm text-gray-600 dark:text-slate-300">
+                  Correct answer: <span className="font-medium">{expected}</span>
+                </p>
+              )}
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {item.options.map((opt, i) => (
+                <OptionButton
+                  key={i}
+                  index={i}
+                  text={opt.text}
+                  multi={item.multi}
+                  selected={selected.has(opt.text)}
+                  submitted={submitted}
+                  isCorrect={opt.isCorrect}
+                  explanation={opt.explanation}
+                  onClick={() => toggle(opt.text)}
+                />
+              ))}
+            </div>
+          )}
 
           <div className="flex items-center justify-between min-h-[44px]">
-            <p className="text-xs text-gray-400 dark:text-slate-500 hidden sm:block">Press 1–{item.options.length} to select · Enter to confirm</p>
+            <div className="flex items-center gap-2">
+              {/* A hint is offered, never pushed: the first press unlocks it, and after that it is
+                  only on screen while the learner asks for it — hovering with a mouse, holding the
+                  button on a touch screen. The popup floats above the row, so revealing it never
+                  moves the question or the options. */}
+              {item.hint && (
+                <div className="relative">
+                  <button
+                    type="button"
+                    data-testid="hint-button"
+                    onClick={() => { setHintUnlocked(true); setHintVisible(true); }}
+                    onMouseEnter={() => hintUnlocked && setHintVisible(true)}
+                    onMouseLeave={() => setHintVisible(false)}
+                    onBlur={() => setHintVisible(false)}
+                    // preventDefault keeps the tap from also firing a click, so hold-to-read and
+                    // press-to-unlock stay one gesture.
+                    onTouchStart={(e) => { e.preventDefault(); setHintUnlocked(true); setHintVisible(true); }}
+                    onTouchEnd={() => setHintVisible(false)}
+                    onTouchCancel={() => setHintVisible(false)}
+                    onContextMenu={(e) => e.preventDefault()}
+                    // No title: the browser's own tooltip would show up underneath our popup.
+                    aria-label="Show hint"
+                    className={`select-none text-base leading-none w-9 h-9 rounded-lg border transition-colors ${
+                      hintVisible
+                        ? "border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20"
+                        : "border-gray-300 dark:border-slate-600 hover:border-amber-300 dark:hover:border-amber-700 hover:bg-amber-50 dark:hover:bg-amber-900/20"
+                    }`}
+                  >
+                    💡
+                  </button>
+                  {hintVisible && (
+                    <div
+                      role="tooltip"
+                      data-testid="hint-text"
+                      className="absolute top-0 left-full ml-2 z-10 w-72 max-w-[80vw] rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-lg px-4 py-3 text-left text-sm text-gray-600 dark:text-slate-300"
+                    >
+                      {item.hint}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
             <div className="flex items-center gap-2 ml-auto">
               {submitted && loggedIn && !item.isRetry && (
                 <div className="flex items-center gap-1">
@@ -328,7 +431,7 @@ export default function StudySession({ items, collectionID, doneTitle, error, re
                   </button>
                 </div>
               )}
-              {!submitted && selected.size > 0 && (
+              {!submitted && answered && (
                 <button onClick={submit} className="border border-indigo-400 dark:border-indigo-600 text-indigo-600 dark:text-indigo-400 px-5 py-2 rounded-xl font-medium hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-colors">
                   Confirm
                 </button>
@@ -340,6 +443,13 @@ export default function StudySession({ items, collectionID, doneTitle, error, re
               )}
             </div>
           </div>
+
+          {/* Its own centred line under the buttons: sharing the row with them left it competing
+              with the hint button for the left edge. */}
+          <p className="-mt-3 text-xs text-center text-gray-400 dark:text-slate-500 hidden sm:block">
+            {typingStep ? "Enter to confirm" : `Press 1–${item.options.length} to select · Enter to confirm`}
+          </p>
+
         </div>
       </main>
     </div>
