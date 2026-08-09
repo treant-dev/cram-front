@@ -371,20 +371,32 @@ test("collection list pages at 20 items", async ({ page }) => {
   await expect(page.getByText("abundant")).toHaveCount(0);
 });
 
-test("typing game: seven cards, wrong answer shows the term", async ({ page }) => {
+test("typing game: three wrong letters end the card and show the term", async ({ page }) => {
   test.setTimeout(60_000);
   await login(page);
   const id = await dictionary(page);
+  // The term is never on screen while the card is live, so the deck is read from the API to
+  // know which letters are the wrong ones to press.
+  const col = await (await page.request.get(`${API}/public/collections/${id}`)).json();
+  const termOf = new Map<string, string>(
+    (col.Cards as Array<{ Term: string; Definition: string }>).map((c) => [c.Definition, c.Term])
+  );
   await page.goto(`/collections/${id}/type`);
 
-  const input = page.getByTestId("type-input");
-  await expect(input).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId("type-slots")).toBeVisible({ timeout: 30_000 });
   // A round is capped at seven cards even though the deck holds thirty.
   await expect(page.getByText("1 / 7")).toBeVisible();
 
-  await input.fill("definitely not the term");
-  await page.getByRole("button", { name: "Check" }).click();
+  const wanted = termOf.get(await page.locator("main p.text-xl").innerText())![0].toLowerCase();
+  for (let i = 1; i <= 3; i++) {
+    const offered = await page.getByTestId("letter-key").allInnerTexts();
+    const wrong = offered.find((o) => o !== wanted)!;
+    await page.getByTestId("letter-key").filter({ hasText: new RegExp(`^${wrong}$`) }).first().click();
+    // The letter is struck off rather than written down, and one of the three tries is gone.
+    await expect(page.getByTestId("type-tries")).toHaveAttribute("aria-label", `${3 - i} of 3 tries left`);
+  }
   await expect(page.getByTestId("type-answer")).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByTestId("letter-key")).toHaveCount(0);
 
   await page.getByRole("button", { name: /^Next/ }).click();
   await expect(page.getByText("2 / 7")).toBeVisible();
