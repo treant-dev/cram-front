@@ -3,10 +3,8 @@ import {
   canonicalTerm,
   slotsOf,
   slotCount,
-  lettersOf,
-  nextLetterOptions,
+  letterBank,
   letterForBlank,
-  scriptOf,
 } from "./typing";
 
 describe("slots", () => {
@@ -30,45 +28,32 @@ describe("letterForBlank", () => {
   });
 });
 
-describe("nextLetterOptions", () => {
-  const pool = lettersOf(["Löffel", "Gabel", "Messer", "Küche"]);
+describe("letterBank", () => {
+  it("deals the answer's own letters and nothing else", () => {
+    expect([...letterBank("Löffel")].sort()).toEqual([..."effllö"].sort());
+  });
 
-  it("always offers the letter that belongs in the blank", () => {
-    for (const [i, want] of [..."löffel"].entries()) {
-      expect(nextLetterOptions("Löffel", i, pool)).toContain(want);
+  it("keeps duplicates as separate tiles — the counts are the point", () => {
+    const bank = letterBank("Löffel");
+    expect(bank).toHaveLength(6);
+    expect(bank.filter((c) => c === "f")).toHaveLength(2);
+    expect(bank.filter((c) => c === "l")).toHaveLength(2);
+  });
+
+  it("shuffles, but deals the same bank every time it is asked", () => {
+    expect(letterBank("meticulous")).toEqual(letterBank("meticulous"));
+    // A shuffle worth the name: ten letters left in written order would be a coincidence.
+    expect(letterBank("meticulous").join("")).not.toBe("meticulous");
+  });
+
+  it("deals only the form being spelled, and never the scaffolding", () => {
+    expect([...letterBank("der Löffel / Löffel")].sort()).toEqual([..."derlöffel"].sort());
+    expect(letterBank("après-midi")).not.toContain("-");
+  });
+
+  it("matches the blanks it has to fill", () => {
+    for (const term of ["der Löffel / Löffel", "l'école", "добро јутро", "ışık"]) {
+      expect(letterBank(term)).toHaveLength(slotCount(term));
     }
-  });
-
-  it("offers six letters when the deck can supply them", () => {
-    const opts = nextLetterOptions("Löffel", 0, pool);
-    expect(opts).toHaveLength(6);
-    expect(new Set(opts).size).toBe(6);
-  });
-
-  it("gives the same six letters every time the same blank is asked about", () => {
-    expect(nextLetterOptions("Löffel", 2, pool)).toEqual(nextLetterOptions("Löffel", 2, pool));
-    expect(nextLetterOptions("Löffel", 2, pool)).not.toEqual(nextLetterOptions("Löffel", 3, pool));
-  });
-
-  it("counts blanks, not characters — the space in a term is never offered", () => {
-    // "der Löffel": blank 3 is the L, the space having been written in already.
-    expect(nextLetterOptions("der Löffel / Löffel", 3, pool)).toContain("l");
-    for (const o of nextLetterOptions("der Löffel / Löffel", 3, pool)) expect(o).not.toBe(" ");
-  });
-
-  it("keeps the decoys in the answer's own script — Serbian decks hold both", () => {
-    const serbian = lettersOf(["љубав", "кућа", "ljubav", "kuća"]);
-    expect(scriptOf("љ")).toBe("cyrillic");
-    for (const c of nextLetterOptions("љубав", 0, serbian)) expect(scriptOf(c)).toBe("cyrillic");
-    for (const c of nextLetterOptions("ljubav", 0, serbian)) expect(scriptOf(c)).toBe("latin");
-  });
-
-  it("offers what it can when the deck's alphabet is too thin for six", () => {
-    expect(nextLetterOptions("go", 0, lettersOf(["go", "on"]))).toEqual(expect.arrayContaining(["g"]));
-    expect(nextLetterOptions("go", 0, lettersOf(["go", "on"]))).toHaveLength(3);
-  });
-
-  it("offers nothing once every blank is filled", () => {
-    expect(nextLetterOptions("go", 2, pool)).toEqual([]);
   });
 });

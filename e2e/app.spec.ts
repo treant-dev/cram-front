@@ -387,13 +387,31 @@ test("typing game: three wrong letters end the card and show the term", async ({
   // A round is capped at seven cards even though the deck holds thirty.
   await expect(page.getByText("1 / 7")).toBeVisible();
 
-  const wanted = termOf.get(await page.locator("main p.text-xl").innerText())![0].toLowerCase();
+  const current = async () =>
+    [...termOf.get(await page.locator("main p.text-xl").innerText())!.toLowerCase()].filter((c) => /\p{L}/u.test(c));
+  const play = async (letter: string) =>
+    page.getByTestId("letter-key").filter({ hasText: new RegExp(`^${letter}$`) }).first().click();
+
+  // A wrong pick strikes off every tile of that letter at once, so three mistakes need three
+  // distinct wrong letters — and "vivid" offers only two. Spell such a card out and take the
+  // next one, rather than flake on whichever card the shuffle happens to deal first.
+  let term = await current();
+  while (new Set(term.filter((c) => c !== term[0])).size < 3) {
+    for (const ch of term) await play(ch);
+    await page.getByRole("button", { name: /^Next/ }).click();
+    term = await current();
+  }
+
+  let struck = 0;
   for (let i = 1; i <= 3; i++) {
     const offered = await page.getByTestId("letter-key").allInnerTexts();
-    const wrong = offered.find((o) => o !== wanted)!;
-    await page.getByTestId("letter-key").filter({ hasText: new RegExp(`^${wrong}$`) }).first().click();
-    // The letter is struck off rather than written down, and one of the three tries is gone.
+    const wrong = offered.find((o) => o !== term[0])!;
+    struck += offered.filter((o) => o === wrong).length;
+    await play(wrong);
     await expect(page.getByTestId("type-tries")).toHaveAttribute("aria-label", `${3 - i} of 3 tries left`);
+    // Struck off rather than written down, and every tile of that letter goes at once — none
+    // of them belongs in this blank. The tiles are gone entirely once the card has ended.
+    if (i < 3) await expect(page.getByTestId("letter-key-out")).toHaveCount(struck);
   }
   await expect(page.getByTestId("type-answer")).toBeVisible({ timeout: 10_000 });
   await expect(page.getByTestId("letter-key")).toHaveCount(0);

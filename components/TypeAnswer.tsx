@@ -1,9 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { canonicalTerm, letterForBlank, nextLetterOptions, slotCount, slotsOf, type Slot } from "@/lib/typing";
+import { canonicalTerm, letterBank, letterForBlank, slotCount, slotsOf, type Slot } from "@/lib/typing";
 
-const OPTION_COUNT = 6; // candidates offered for the blank in hand
 // Wrong letters a card survives. Three is enough to recover from a slip or a genuinely
 // uncertain letter, and few enough that the round is still a test of knowing the word.
 const MAX_MISTAKES = 3;
@@ -55,8 +54,6 @@ type Props = {
   onChange: (letters: string) => void;
   /** Called when a wrong letter is picked, so the caller can count it against the card. */
   onMistake: () => void;
-  /** The deck's own alphabet, which the decoy letters are drawn from. */
-  pool: string[];
   mistakes: number;
   maxMistakes: number;
   /** After a verdict the answer is frozen and tinted. */
@@ -66,33 +63,49 @@ type Props = {
 /**
  * The written answer, one blank per letter, filled a letter at a time.
  *
- * A blank per letter says which form the card wants without giving the word away, and each
- * blank is offered six candidates — the right letter among five decoys. A wrong pick is
- * struck off rather than written down, so the answer on screen is only ever the real spelling
- * and there is nothing to delete; what a wrong pick costs is one of the card's three tries.
+ * A blank per letter says which form the card wants without giving the word away, and the
+ * word's own letters are dealt out of order below it: the question is which letter goes
+ * where, not whether the keyboard can produce ö. A wrong pick is struck off rather than
+ * written down, so the answer on screen is only ever the real spelling and there is nothing
+ * to delete; what a wrong pick costs is one of the card's three tries.
  */
-export default function TypeAnswer({ term, letters, onChange, onMistake, pool, mistakes, maxMistakes, verdict }: Props) {
+export default function TypeAnswer({ term, letters, onChange, onMistake, mistakes, maxMistakes, verdict }: Props) {
   const canonical = useMemo(() => canonicalTerm(term), [term]);
   const slots = useMemo(() => slotsOf(canonical), [canonical]);
   const typed = [...letters];
   const position = typed.length;
-  const capacity = slots.filter((s) => s.fill).length;
+  const bank = useMemo(() => letterBank(canonical), [canonical]);
   const locked = verdict != null;
-  const done = position >= capacity;
+  const done = position >= bank.length; // one tile per blank, so the bank counts them
 
-  // Letters already tried and rejected at the blank in hand. Held with the blank they belong
-  // to, so moving on clears them without an effect to keep in step.
+  // Letters already tried and rejected at the blank in hand. Rejection is by letter, not by
+  // tile: if this blank is not an f, neither of the two f tiles will do, and spending a
+  // second try to learn that twice would be a punishment for the word having a double letter.
+  // Held with the blank they belong to, so moving on clears them without an effect to keep
+  // in step.
   const [rejected, setRejected] = useState<{ term: string; pos: number; keys: string[] }>({ term: "", pos: 0, keys: [] });
   const struck = rejected.term === canonical && rejected.pos === position ? rejected.keys : [];
 
-  // Fresh candidates per blank, and stable for as long as the learner is on it.
-  const options = useMemo(
-    () => (locked || done ? [] : nextLetterOptions(canonical, position, pool, OPTION_COUNT)),
-    [canonical, position, pool, locked, done]
-  );
+  // A tile is spent once its letter has been written down. Matched in order, so a word with
+  // two f's spends the first f tile before the second — which of the two hardly matters, but
+  // the same one must stay spent from render to render.
+  const spent = useMemo(() => {
+    const flags = bank.map(() => false);
+    for (const ch of [...letters]) {
+      const i = bank.findIndex((c, j) => !flags[j] && c === ch);
+      if (i >= 0) flags[i] = true;
+    }
+    return flags;
+  }, [bank, letters]);
 
-  function press(key: string) {
-    if (locked || done || !options.includes(key) || struck.includes(key)) return;
+  /** The tile a letter would spend next: the first of its kind still in hand. */
+  function tileFor(key: string): number {
+    return bank.findIndex((c, i) => c === key && !spent[i] && !struck.includes(c));
+  }
+
+  function press(tile: number) {
+    const key = bank[tile];
+    if (locked || done || spent[tile] || struck.includes(key)) return;
     if (key === letterForBlank(canonical, position)) {
       onChange(letters + key);
       return;
@@ -101,14 +114,16 @@ export default function TypeAnswer({ term, letters, onChange, onMistake, pool, m
     onMistake();
   }
 
-  // The offered letters answer to the physical keyboard too: this mode has no text field to
-  // focus, and a learner at a desk should not have to reach for the mouse. A key that is not
-  // one of the six does nothing at all — only a letter genuinely on offer can cost a try.
+  // The tiles answer to the physical keyboard too: this mode has no text field to focus, and
+  // a learner at a desk should not have to reach for the mouse. A key with no tile left to
+  // spend does nothing at all — only a letter genuinely on offer can cost a try.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (locked || e.metaKey || e.ctrlKey || e.altKey) return;
       const k = e.key.toLowerCase();
-      if ([...k].length === 1 && options.includes(k)) { e.preventDefault(); press(k); }
+      if ([...k].length !== 1) return;
+      const tile = tileFor(k);
+      if (tile >= 0) { e.preventDefault(); press(tile); }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -137,28 +152,32 @@ export default function TypeAnswer({ term, letters, onChange, onMistake, pool, m
         ))}
       </div>
 
-      {/* Kept mounted while the answer is being written so the rest of the page does not jump;
-          once every blank is filled there is nothing left to choose. */}
-      <div className="flex justify-center items-center gap-1.5 min-h-11 select-none">
-        {options.map((key) => {
-          const out = struck.includes(key);
+      {/* Every tile keeps its place all the way through: spent ones dim rather than vanish, so
+          the row never rearranges itself between picks. */}
+      <div className="flex flex-wrap justify-center items-center gap-1.5 min-h-11 select-none">
+        {!locked && bank.map((key, tile) => {
+          const ruledOut = struck.includes(key);
+          const used = spent[tile];
           return (
             <button
-              key={key}
+              key={tile}
               type="button"
-              // The letters never take focus: with no text field in this mode, focus left
-              // sitting on a letter would make the next Enter press that letter again instead
-              // of moving on to the next card.
+              // The tiles never take focus: with no text field in this mode, focus left sitting
+              // on a letter would make the next Enter press that letter again instead of
+              // moving on to the next card.
               onMouseDown={(e) => e.preventDefault()}
-              onClick={() => press(key)}
-              disabled={out}
-              aria-label={out ? `${key}, ruled out` : key}
-              data-testid={out ? "letter-key-out" : "letter-key"}
+              onClick={() => press(tile)}
+              disabled={used || ruledOut}
+              aria-label={used ? `${key}, used` : ruledOut ? `${key}, not this letter here` : key}
+              data-testid={used ? "letter-key-used" : ruledOut ? "letter-key-out" : "letter-key"}
               className={`w-11 h-11 rounded-xl border text-lg font-medium transition-colors ${
-                out
-                  // Struck off, not removed: seeing which letters are gone is part of working
-                  // out what is left, and a vanishing key would shuffle the row mid-thought.
-                  ? "border-transparent bg-gray-50 dark:bg-slate-900 text-gray-300 dark:text-slate-700 line-through cursor-default"
+                used
+                  ? "border-transparent bg-gray-50 dark:bg-slate-900 text-gray-300 dark:text-slate-700 cursor-default"
+                  : ruledOut
+                  // Red rather than greyed away: the letter is still in the word and will be
+                  // wanted at some later blank — it is only wrong here, which is worth
+                  // knowing and is not the same thing as being spent.
+                  ? "border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-900/20 text-red-500 dark:text-red-400 cursor-default"
                   : "border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 hover:border-indigo-400 hover:bg-indigo-50 dark:hover:border-indigo-500 dark:hover:bg-indigo-900/30 active:bg-indigo-100 dark:active:bg-indigo-900/60"
               }`}
             >

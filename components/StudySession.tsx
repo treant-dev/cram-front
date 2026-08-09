@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
 import OptionButton from "@/components/OptionButton";
@@ -9,7 +9,6 @@ import SpeakButton from "@/components/SpeakButton";
 import LevelDot from "@/components/LevelDot";
 import { api, type ProgressEntry } from "@/lib/api";
 import { isLoggedIn } from "@/lib/auth";
-import { lettersOf } from "@/lib/typing";
 import { applyAnswer, applyConfidence, nextReviewFromLevel } from "@/lib/progress";
 import type { SessionItem } from "@/lib/session";
 
@@ -101,9 +100,6 @@ export default function StudySession({ items, collectionID, doneTitle, error, re
   // Only a chosen option counts as an answer to confirm: a written step ends itself, on its
   // own last letter or its third mistake.
   const answered = selected.size > 0;
-  // Decoy letters on the written step come from the letters this session's own answers use,
-  // so the alphabet offered stays that of the deck.
-  const pool = useMemo(() => lettersOf(items.map((it) => it.options.find((o) => o.isCorrect)?.text ?? "")), [items]);
 
   // `written` is the outcome of a written step, handed over by the guided answer that ended
   // it. It also stands in for `answered`: a step failed on mistakes alone ends with nothing
@@ -298,7 +294,6 @@ export default function StudySession({ items, collectionID, doneTitle, error, re
             <div className="flex flex-col gap-2">
               <TypeAnswer
                 term={expected}
-                pool={pool}
                 {...answer}
                 verdict={submitted ? (isCorrect ? "right" : "wrong") : null}
               />
