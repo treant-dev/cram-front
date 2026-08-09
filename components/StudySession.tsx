@@ -1,14 +1,16 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
 import OptionButton from "@/components/OptionButton";
+import TypeAnswer, { useGuidedAnswer } from "@/components/TypeAnswer";
 import SpeakButton from "@/components/SpeakButton";
 import LevelDot from "@/components/LevelDot";
 import { api, type ProgressEntry } from "@/lib/api";
 import { isLoggedIn } from "@/lib/auth";
-import { isTypedCorrect } from "@/lib/typing";
+import { lettersOf } from "@/lib/typing";
+import { applyAnswer, applyConfidence, nextReviewFromLevel } from "@/lib/progress";
 import type { SessionItem } from "@/lib/session";
 
 // From this level on, a card is asked to be written rather than picked: recognising one of
@@ -34,37 +36,6 @@ function reshuffleOptions(options: SessionItem["options"]): SessionItem["options
   return a;
 }
 
-function applyAnswer(level: number, correct: boolean, nextReviewAt?: string): number {
-  if (level === 7) return 7;
-  if (correct) {
-    if (level === 1) return 2;
-    if (nextReviewAt && new Date(nextReviewAt) > new Date()) return level;
-    return Math.min(level + 1, 6);
-  }
-  return Math.max(1, Math.floor(level / 2));
-}
-
-function applyConfidence(level: number, delta: number): number {
-  if (delta === 1) return level >= 6 ? 7 : level + 1;
-  if (delta === -1) return Math.max(1, Math.floor(level / 2));
-  return level;
-}
-
-function nextReviewFromLevel(level: number): string {
-  const now = Date.now();
-  const day = 86400000;
-  const dates: Record<number, number> = {
-    1: now + day,
-    2: now + 2 * day,
-    3: now + 7 * day,
-    4: now + 14 * day,
-    5: now + 30 * day,
-    6: now + 180 * day,
-  };
-  if (level === 7) return "2099-12-31T00:00:00Z";
-  return new Date(dates[level] ?? now + day).toISOString();
-}
-
 export default function StudySession({ items, collectionID, doneTitle, error, requeueWrongCards }: Props) {
   const router = useRouter();
   const loggedIn = isLoggedIn();
@@ -85,7 +56,6 @@ export default function StudySession({ items, collectionID, doneTitle, error, re
   // is fed into scoring or into progress.
   const [hintUnlocked, setHintUnlocked] = useState(false);
   const [hintVisible, setHintVisible] = useState(false);
-  const [typed, setTyped] = useState(""); // the written answer, when this step is typed
 
   // Progress state: keyed by "card:<id>" or "tq:<id>"
   const [progress, setProgress] = useState<Record<string, ProgressEntry>>({});
@@ -102,7 +72,6 @@ export default function StudySession({ items, collectionID, doneTitle, error, re
     setIndex(0);
     setHintUnlocked(false);
     setHintVisible(false);
-    setTyped("");
   }
 
   useEffect(() => {
@@ -129,13 +98,21 @@ export default function StudySession({ items, collectionID, doneTitle, error, re
   // where it would mean writing out a whole definition) and only once well known.
   const typingStep = !!item?.typable && currentLevel >= TYPE_FROM_LEVEL;
   const expected = item?.options.find((o) => o.isCorrect)?.text ?? "";
-  const answered = typingStep ? typed.trim() !== "" : selected.size > 0;
+  // Only a chosen option counts as an answer to confirm: a written step ends itself, on its
+  // own last letter or its third mistake.
+  const answered = selected.size > 0;
+  // Decoy letters on the written step come from the letters this session's own answers use,
+  // so the alphabet offered stays that of the deck.
+  const pool = useMemo(() => lettersOf(items.map((it) => it.options.find((o) => o.isCorrect)?.text ?? "")), [items]);
 
-  const submit = useCallback(() => {
-    if (submitted || !item || !answered) return;
+  // `written` is the outcome of a written step, handed over by the guided answer that ended
+  // it. It also stands in for `answered`: a step failed on mistakes alone ends with nothing
+  // written down at all.
+  const submit = useCallback((written?: boolean) => {
+    if (submitted || !item || (written === undefined && !answered)) return;
     const correctSet = new Set(item.options.filter((o) => o.isCorrect).map((o) => o.text));
     const correct = typingStep
-      ? isTypedCorrect(typed, expected)
+      ? written === true
       : selected.size === correctSet.size && [...selected].every((s) => correctSet.has(s));
     setIsCorrect(correct);
     setSubmitted(true);
@@ -150,7 +127,10 @@ export default function StudySession({ items, collectionID, doneTitle, error, re
     // Score counts first attempts only; retries are practice.
     if (item.isRetry) return;
     if (correct) setScore((sc) => sc + 1);
-  }, [submitted, selected, item, currentLevel, answered, typingStep, typed, expected]);
+  }, [submitted, selected, item, currentLevel, answered, typingStep]);
+
+  const answer = useGuidedAnswer(expected, submit);
+  const resetAnswer = answer.reset;
 
   const next = useCallback(() => {
     if (!item) return;
@@ -194,8 +174,10 @@ export default function StudySession({ items, collectionID, doneTitle, error, re
     setConfidenceDelta(null);
     setHintUnlocked(false);
     setHintVisible(false);
-    setTyped("");
-  }, [index, queue, item, isCorrect, confidenceDelta, displayLevel, currentLevel, collectionID, requeueWrongCards]);
+    // Explicit as well as the hook's own reset on a changed term: a wrong last item is
+    // requeued straight after itself, and that retry asks for the same word twice running.
+    resetAnswer();
+  }, [index, queue, item, isCorrect, confidenceDelta, displayLevel, currentLevel, collectionID, requeueWrongCards, resetAnswer]);
 
   function handleConfidence(delta: -1 | 1) {
     if (confidenceDelta !== null || displayLevel === null) return;
@@ -227,7 +209,12 @@ export default function StudySession({ items, collectionID, doneTitle, error, re
         // Keyboard has no hold gesture, so h toggles instead: press to read, press again to hide.
         if (e.key === "h" && item.hint) { e.preventDefault(); setHintUnlocked(true); setHintVisible((v) => !v); }
       }
-      if (e.code === "Enter") { e.preventDefault(); submitted ? next() : answered && submit(); }
+      // A focused button answers to Enter itself; handling it here as well would submit and
+      // then advance on a single press.
+      if (e.code === "Enter" && (e.target as HTMLElement | null)?.tagName !== "BUTTON") {
+        e.preventDefault();
+        submitted ? next() : answered && submit();
+      }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -309,28 +296,12 @@ export default function StudySession({ items, collectionID, doneTitle, error, re
 
           {typingStep ? (
             <div className="flex flex-col gap-2">
-              <div className="relative">
-                <span aria-hidden className="absolute left-4 top-1/2 -translate-y-1/2 text-lg pointer-events-none select-none">⌨️</span>
-                <input
-                  value={typed}
-                  onChange={(e) => setTyped(e.target.value)}
-                  readOnly={submitted}
-                  placeholder="Write the answer…"
-                  aria-label="Write the answer"
-                  data-testid="type-input"
-                  autoFocus
-                  autoComplete="off"
-                  autoCorrect="off"
-                  spellCheck={false}
-                  className={`w-full rounded-xl border pl-12 pr-4 py-3 text-left text-lg focus:outline-none placeholder:text-gray-400 dark:placeholder:text-slate-500 ${
-                    !submitted
-                      ? "border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100"
-                      : isCorrect
-                      ? "border-green-400 dark:border-green-600 bg-green-50 dark:bg-green-900/20 text-green-800 dark:text-green-300"
-                      : "border-red-400 dark:border-red-600 bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-300"
-                  }`}
-                />
-              </div>
+              <TypeAnswer
+                term={expected}
+                pool={pool}
+                {...answer}
+                verdict={submitted ? (isCorrect ? "right" : "wrong") : null}
+              />
               {submitted && !isCorrect && (
                 <p data-testid="type-answer" className="text-center text-sm text-gray-600 dark:text-slate-300">
                   Correct answer: <span className="font-medium">{expected}</span>
@@ -432,7 +403,7 @@ export default function StudySession({ items, collectionID, doneTitle, error, re
                 </div>
               )}
               {!submitted && answered && (
-                <button onClick={submit} className="border border-indigo-400 dark:border-indigo-600 text-indigo-600 dark:text-indigo-400 px-5 py-2 rounded-xl font-medium hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-colors">
+                <button onClick={() => submit()} className="border border-indigo-400 dark:border-indigo-600 text-indigo-600 dark:text-indigo-400 px-5 py-2 rounded-xl font-medium hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-colors">
                   Confirm
                 </button>
               )}

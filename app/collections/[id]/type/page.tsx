@@ -1,12 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { api, Card } from "@/lib/api";
+import { api, Card, type ProgressEntry } from "@/lib/api";
 import { isLoggedIn } from "@/lib/auth";
 import Navbar from "@/components/Navbar";
-import { isTypedCorrect } from "@/lib/typing";
+import TypeAnswer, { useGuidedAnswer } from "@/components/TypeAnswer";
+import LevelDot from "@/components/LevelDot";
+import { lettersOf } from "@/lib/typing";
+import { applyAnswer, nextReviewFromLevel } from "@/lib/progress";
 
 const SESSION_SIZE = 7; // cards per round, matching blitz
 
@@ -18,7 +21,6 @@ export default function TypePage(props: PageProps<"/collections/[id]/type">) {
   const [collectionID, setCollectionID] = useState("");
   const [cards, setCards] = useState<Card[]>([]);
   const [index, setIndex] = useState(0);
-  const [typed, setTyped] = useState("");
   const [verdict, setVerdict] = useState<"right" | "wrong" | null>(null);
   const [score, setScore] = useState(0);
   const [done, setDone] = useState(false);
@@ -27,7 +29,10 @@ export default function TypePage(props: PageProps<"/collections/[id]/type">) {
   // asked for. Asking costs nothing — the term still has to be typed.
   const [hintUnlocked, setHintUnlocked] = useState(false);
   const [hintVisible, setHintVisible] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
+  // Where each card stands, so this mode carries the same level dot as blitz. The level shown
+  // moves the moment a verdict lands and is then trued up from the server's own answer.
+  const [progress, setProgress] = useState<Record<string, ProgressEntry>>({});
+  const [displayLevel, setDisplayLevel] = useState<number | null>(null);
 
   useEffect(() => {
     props.params.then(({ id }) => {
@@ -46,36 +51,69 @@ export default function TypePage(props: PageProps<"/collections/[id]/type">) {
   }, [props.params]);
 
   useEffect(() => {
+    if (!isLoggedIn() || !collectionID) return;
+    api.progress.get(collectionID).then((data) => setProgress(data.cards)).catch(() => {});
+  }, [collectionID]);
+
+  useEffect(() => {
     if (!done || !collectionID) return;
     const t = setTimeout(() => router.replace(`/collections/${collectionID}`), 1700);
     return () => clearTimeout(t);
   }, [done, collectionID, router]);
 
   const card = cards[index];
+  const currentEntry = card ? (progress[card.ID] ?? null) : null;
+  const currentLevel = currentEntry?.level ?? 1;
+  const shownLevel = displayLevel ?? currentLevel;
 
-  // Keep the caret in the box between cards — this mode is played entirely from the keyboard.
-  useEffect(() => { inputRef.current?.focus(); }, [index, verdict]);
+  // The decoys are drawn from the letters this deck actually uses, so the letters offered
+  // stay in the language being learnt.
+  const pool = useMemo(() => lettersOf(cards.map((c) => c.Term)), [cards]);
 
-  const check = useCallback(() => {
-    if (!card || verdict !== null || typed.trim() === "") return;
-    const right = isTypedCorrect(typed, card.Term);
+  // There is nothing to check: a wrong letter is never written down, so the card ends of its
+  // own accord — spelled out, or three wrong picks in.
+  const finish = useCallback((right: boolean) => {
+    if (!card || verdict !== null) return;
     setVerdict(right ? "right" : "wrong");
     if (right) setScore((s) => s + 1);
+    setDisplayLevel(applyAnswer(currentLevel, right, currentEntry?.next_review_at));
     if (isLoggedIn() && collectionID) {
       // Unlike match, a wrong answer here is a real failure of recall, not the cost of
       // exploring a board, so it is reported as one.
-      api.progress.update(collectionID, "card", card.ID, right, 0).catch(() => {});
+      api.progress.update(collectionID, "card", card.ID, right, 0)
+        .then((res) => setProgress((prev) => ({ ...prev, [card.ID]: { level: res.level, next_review_at: res.next_review_at } })))
+        .catch(() => {});
     }
-  }, [card, typed, verdict, collectionID]);
+  }, [card, verdict, collectionID, currentLevel, currentEntry?.next_review_at]);
+
+  const answer = useGuidedAnswer(card?.Term ?? "", finish);
+  const resetAnswer = answer.reset;
 
   const next = useCallback(() => {
     setVerdict(null);
-    setTyped("");
+    resetAnswer();
+    setDisplayLevel(null);
     setHintUnlocked(false);
     setHintVisible(false);
     if (index + 1 >= cards.length) { setDone(true); return; }
     setIndex((i) => i + 1);
-  }, [index, cards.length]);
+  }, [index, cards.length, resetAnswer]);
+
+  // Enter lives on the window now that there is no text field to hang it off; the letters
+  // themselves are handled inside TypeAnswer.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== "Enter") return;
+      // A focused Next button already answers to Enter itself; handling it here as well would
+      // advance two cards on one press.
+      if ((e.target as HTMLElement | null)?.tagName === "BUTTON") return;
+      if (verdict === null) return;
+      e.preventDefault();
+      next();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [verdict, next]);
 
   if (error) {
     return (
@@ -115,20 +153,20 @@ export default function TypePage(props: PageProps<"/collections/[id]/type">) {
     );
   }
 
-  const inputTint =
-    verdict === "right" ? "border-green-400 dark:border-green-600 bg-green-50 dark:bg-green-900/20 text-green-800 dark:text-green-300"
-    : verdict === "wrong" ? "border-red-400 dark:border-red-600 bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-300"
-    : "border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100";
-
   return (
     <div className="min-h-screen flex flex-col">
       <Navbar />
       {/* Same three-row grid as the flashcards: the prompt stays put whether or not a verdict
           and a hint are showing underneath. */}
       <main className="flex-1 grid grid-rows-[1fr_auto_1fr] px-4">
+        {/* Same furniture as a blitz step: how far in, how well this card is known, and what
+            kind of item it is. */}
         <div className="self-end mx-auto mb-3 w-full max-w-lg flex items-center justify-between">
-          <p className="text-xs text-gray-400 dark:text-slate-500 uppercase tracking-wide">Write the term</p>
           <p className="text-sm text-gray-400 dark:text-slate-500">{index + 1} / {cards.length}</p>
+          <div className="flex items-center gap-2">
+            {isLoggedIn() && <LevelDot level={shownLevel} nextReviewAt={nextReviewFromLevel(shownLevel)} />}
+            <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-purple-100 text-purple-600">Card</span>
+          </div>
         </div>
 
         <div className="mx-auto w-full max-w-lg min-h-48 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-2xl shadow-sm flex flex-col items-center justify-center p-8 text-center gap-4">
@@ -136,31 +174,7 @@ export default function TypePage(props: PageProps<"/collections/[id]/type">) {
         </div>
 
         <div className="self-start mx-auto mt-3 w-full max-w-lg flex flex-col gap-3">
-          <div className="relative">
-            {/* Decorative, like the collection search's glass: the label already names the
-                field, and the icon must not eat clicks meant for the input. */}
-            <span aria-hidden className="absolute left-4 top-1/2 -translate-y-1/2 text-lg pointer-events-none select-none">⌨️</span>
-          <input
-            ref={inputRef}
-            value={typed}
-            onChange={(e) => setTyped(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); verdict === null ? check() : next(); } }}
-            readOnly={verdict !== null}
-            placeholder="Type the term…"
-            aria-label="Type the term"
-            data-testid="type-input"
-            autoFocus
-            autoComplete="off"
-            autoCorrect="off"
-            spellCheck={false}
-            // Left-aligned throughout: the caret starts at the placeholder's first letter and
-            // stays where the typing left it. Centring only the typed text would shift every
-            // character already written on each new keystroke.
-            // No focus ring: the field is focused the whole time in this mode, so a permanent
-            // blue halo says nothing and fights the green/red verdict tint for attention.
-            className={`w-full rounded-xl border pl-12 pr-4 py-3 text-left text-lg focus:outline-none placeholder:text-gray-400 dark:placeholder:text-slate-500 ${inputTint}`}
-          />
-          </div>
+          <TypeAnswer term={card.Term} pool={pool} verdict={verdict} {...answer} />
 
           {/* Only shown after a wrong answer: seeing the right spelling is the whole lesson. */}
           {verdict === "wrong" && (
@@ -205,24 +219,18 @@ export default function TypePage(props: PageProps<"/collections/[id]/type">) {
                 )}
               </div>
             ) : <span />}
-            {verdict === null ? (
-              <button
-                onClick={check}
-                disabled={typed.trim() === ""}
-                className="border border-indigo-400 dark:border-indigo-600 text-indigo-600 dark:text-indigo-400 px-5 py-2 rounded-xl font-medium hover:bg-indigo-50 dark:hover:bg-indigo-900/30 disabled:opacity-40 transition-colors"
-              >
-                Check
-              </button>
-            ) : (
+            {/* Nothing to press until the card has ended: the letters themselves are the
+                whole interaction. */}
+            {verdict === null ? <span /> : (
               <button onClick={next} className="bg-indigo-600 text-white px-5 py-2 rounded-xl font-medium hover:bg-indigo-700 transition-colors">
                 {index + 1 >= cards.length ? "Finish" : "Next →"}
               </button>
             )}
           </div>
 
-          <p className="-mt-1 text-xs text-center text-gray-400 dark:text-slate-500">
-            Enter to {verdict === null ? "check" : "continue"}
-          </p>
+          {verdict !== null && (
+            <p className="-mt-1 text-xs text-center text-gray-400 dark:text-slate-500">Enter to continue</p>
+          )}
         </div>
       </main>
 
