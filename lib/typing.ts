@@ -1,14 +1,14 @@
 // The rules behind the typing mini-game: the learner reads a definition and spells the term
-// out, one letter at a time, from candidates the app offers. Pure, so the rules are testable
-// without a keyboard.
+// out, a letter at a time, from the word's own letters dealt out of order. Pure, so the rules
+// are testable without a keyboard.
 
 // ---------------------------------------------------------------------------
-// Guided answering: one blank per letter, filled a letter at a time from six candidates.
+// Guided answering: one blank per letter, filled from the word's own letters, shuffled.
 //
 // Writing a term from a definition asks two questions at once — do you know the word, and
 // can you guess which of its forms the card wants ("Löffel", "der Löffel", plural?). Only
-// the first is worth testing. A blank per letter answers the second for free, and offering
-// six letters for the blank in hand removes the third unfair failure: hunting for ö on a
+// the first is worth testing. A blank per letter answers the second for free, and dealing
+// the word's letters out of order removes the third unfair failure: hunting for ö on a
 // keyboard that has no ö.
 // ---------------------------------------------------------------------------
 
@@ -40,24 +40,6 @@ export function slotCount(term: string): number {
   return slotsOf(term).filter((s) => s.fill).length;
 }
 
-/** Every distinct letter used across a set of texts — the deck's own alphabet. */
-export function lettersOf(texts: string[]): string[] {
-  const seen = new Set<string>();
-  for (const t of texts) for (const c of t.toLowerCase()) if (LETTER.test(c)) seen.add(c);
-  return [...seen].sort();
-}
-
-const SCRIPTS: Array<[string, RegExp]> = [
-  ["latin", /\p{Script=Latin}/u],
-  ["cyrillic", /\p{Script=Cyrillic}/u],
-  ["greek", /\p{Script=Greek}/u],
-];
-
-/** Which alphabet a letter belongs to — "other" for anything not worth telling apart here. */
-export function scriptOf(letter: string): string {
-  return SCRIPTS.find(([, re]) => re.test(letter))?.[0] ?? "other";
-}
-
 /**
  * The letter that belongs in blank `position`, lowercased — what a pick is judged against.
  * Null once the word is spelled out.
@@ -68,26 +50,17 @@ export function letterForBlank(term: string, position: number): string | null {
 }
 
 /**
- * The letters offered for the next blank: the one that belongs there plus `count - 1` decoys,
- * shuffled. Six choices is enough to make the pick a real one while leaving no room for a
- * typo — and because the right letter is always among them, a learner who knows the word can
- * always finish it.
+ * The answer's own letters, shuffled — the tiles a learner picks from. Every letter of the
+ * word is there and nothing else, duplicates included, so "Löffel" offers two f's and two
+ * l's: the tiles carry the letter counts, which the blanks alone cannot.
  *
- * Decoys are kept to the answer's own script. A Serbian deck holds the same words in both
- * ћирилица and latinica, and a Cyrillic answer offered Latin decoys would both look broken
- * and give itself away — only one candidate would be in the right alphabet.
- *
- * Deterministic in (term, position): the same blank offers the same six letters however often
- * the page re-renders, so the choices never shuffle themselves under the learner's finger.
+ * Deterministic in the term, so the bank a card deals is the same however often the page
+ * re-renders and the tiles never rearrange themselves under the learner's finger.
  */
-export function nextLetterOptions(term: string, position: number, pool: string[], count = 6): string[] {
+export function letterBank(term: string): string[] {
   const canonical = canonicalTerm(term);
-  const target = letterForBlank(canonical, position);
-  if (!target) return [];
-  const script = scriptOf(target);
-  const rand = seeded(`${canonical}#${position}`);
-  const decoys = shuffled(pool.filter((c) => c !== target && scriptOf(c) === script), rand);
-  return shuffled([target, ...decoys.slice(0, Math.max(0, count - 1))], rand);
+  const letters = slotsOf(canonical).filter((s) => s.fill).map((s) => s.char.toLowerCase());
+  return shuffled(letters, seeded(canonical));
 }
 
 /**

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api, Card, type ProgressEntry } from "@/lib/api";
@@ -8,7 +8,6 @@ import { isLoggedIn } from "@/lib/auth";
 import Navbar from "@/components/Navbar";
 import TypeAnswer, { useGuidedAnswer } from "@/components/TypeAnswer";
 import LevelDot from "@/components/LevelDot";
-import { lettersOf } from "@/lib/typing";
 import { applyAnswer, nextReviewFromLevel } from "@/lib/progress";
 
 const SESSION_SIZE = 7; // cards per round, matching blitz
@@ -65,10 +64,6 @@ export default function TypePage(props: PageProps<"/collections/[id]/type">) {
   const currentEntry = card ? (progress[card.ID] ?? null) : null;
   const currentLevel = currentEntry?.level ?? 1;
   const shownLevel = displayLevel ?? currentLevel;
-
-  // The decoys are drawn from the letters this deck actually uses, so the letters offered
-  // stay in the language being learnt.
-  const pool = useMemo(() => lettersOf(cards.map((c) => c.Term)), [cards]);
 
   // There is nothing to check: a wrong letter is never written down, so the card ends of its
   // own accord — spelled out, or three wrong picks in.
@@ -174,7 +169,7 @@ export default function TypePage(props: PageProps<"/collections/[id]/type">) {
         </div>
 
         <div className="self-start mx-auto mt-3 w-full max-w-lg flex flex-col gap-3">
-          <TypeAnswer term={card.Term} pool={pool} verdict={verdict} {...answer} />
+          <TypeAnswer term={card.Term} verdict={verdict} {...answer} />
 
           {/* Only shown after a wrong answer: seeing the right spelling is the whole lesson. */}
           {verdict === "wrong" && (
