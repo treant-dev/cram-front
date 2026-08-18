@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
 import {
-  canonicalTerm,
   slotsOf,
   slotCount,
   letterBank,
@@ -13,9 +12,9 @@ describe("slots", () => {
     expect(slotCount("der Löffel")).toBe(9); // the space is not typed
   });
 
-  it("draws the first alternative when the term lists several", () => {
-    expect(canonicalTerm("der Löffel / Löffel")).toBe("der Löffel");
-    expect(slotCount("der Löffel / Löffel")).toBe(9);
+  it("spells the term as written, slash and all", () => {
+    expect(slotCount("be/get bogged down")).toBe(15); // two spaces and the slash are not typed
+    expect(slotsOf("be/get")[2]).toEqual({ char: "/", fill: false });
   });
 });
 
@@ -46,13 +45,13 @@ describe("letterBank", () => {
     expect(letterBank("meticulous").join("")).not.toBe("meticulous");
   });
 
-  it("deals only the form being spelled, and never the scaffolding", () => {
-    expect([...letterBank("der Löffel / Löffel")].sort()).toEqual([..."derlöffel"].sort());
+  it("deals the letters and never the scaffolding", () => {
+    expect([...letterBank("be/get")].sort()).toEqual([..."beget"].sort());
     expect(letterBank("après-midi")).not.toContain("-");
   });
 
   it("matches the blanks it has to fill", () => {
-    for (const term of ["der Löffel / Löffel", "l'école", "добро јутро", "ışık"]) {
+    for (const term of ["be/get bogged down", "l'école", "добро јутро", "ışık"]) {
       expect(letterBank(term)).toHaveLength(slotCount(term));
     }
   });

@@ -14,25 +14,16 @@
 
 const LETTER = /\p{L}/u;
 
-/**
- * The single form a learner is asked to spell out. A card may list alternatives with a slash
- * ("der Löffel / Löffel") and blanks can only be drawn for one of them; the first is the one
- * the card's author led with.
- */
-export function canonicalTerm(term: string): string {
-  const first = term.split("/")[0].trim();
-  return first || term.trim();
-}
-
 export type Slot = { char: string; fill: boolean };
 
 /**
- * One slot per character of the answer. Letters are blanks to fill; spaces, hyphens, digits
- * and punctuation are shown as written — they are scaffolding, not recall, and pre-filling
- * them is what makes the blank count readable as "one word" or "article plus noun".
+ * One slot per character of the answer, the term exactly as the card writes it. Letters are
+ * blanks to fill; spaces, slashes, hyphens, digits and punctuation are shown as written —
+ * they are scaffolding, not recall, and pre-filling them is what makes the blank count
+ * readable as "one word" or "article plus noun".
  */
 export function slotsOf(term: string): Slot[] {
-  return [...canonicalTerm(term)].map((char) => ({ char, fill: LETTER.test(char) }));
+  return [...term].map((char) => ({ char, fill: LETTER.test(char) }));
 }
 
 /** How many letters a complete answer takes. */
@@ -58,9 +49,8 @@ export function letterForBlank(term: string, position: number): string | null {
  * re-renders and the tiles never rearrange themselves under the learner's finger.
  */
 export function letterBank(term: string): string[] {
-  const canonical = canonicalTerm(term);
-  const letters = slotsOf(canonical).filter((s) => s.fill).map((s) => s.char.toLowerCase());
-  return shuffled(letters, seeded(canonical));
+  const letters = slotsOf(term).filter((s) => s.fill).map((s) => s.char.toLowerCase());
+  return shuffled(letters, seeded(term));
 }
 
 /**

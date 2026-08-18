@@ -7,6 +7,7 @@ import OptionButton from "@/components/OptionButton";
 import TypeAnswer, { useGuidedAnswer } from "@/components/TypeAnswer";
 import SpeakButton from "@/components/SpeakButton";
 import LevelDot from "@/components/LevelDot";
+import HintButton from "@/components/HintButton";
 import { api, type ProgressEntry } from "@/lib/api";
 import { isLoggedIn } from "@/lib/auth";
 import { applyAnswer, applyConfidence, nextReviewFromLevel } from "@/lib/progress";
@@ -53,8 +54,6 @@ export default function StudySession({ items, collectionID, doneTitle, error, re
   // Per item: unlocked by the first press, then shown only while asked for (hover or hold).
   // Asking for a hint costs nothing — the learner still picks the answer — so neither flag
   // is fed into scoring or into progress.
-  const [hintUnlocked, setHintUnlocked] = useState(false);
-  const [hintVisible, setHintVisible] = useState(false);
 
   // Progress state: keyed by "card:<id>" or "tq:<id>"
   const [progress, setProgress] = useState<Record<string, ProgressEntry>>({});
@@ -69,8 +68,6 @@ export default function StudySession({ items, collectionID, doneTitle, error, re
     setQueue(items);
     setTotal(items.length);
     setIndex(0);
-    setHintUnlocked(false);
-    setHintVisible(false);
   }
 
   useEffect(() => {
@@ -168,8 +165,6 @@ export default function StudySession({ items, collectionID, doneTitle, error, re
     setSubmitted(false);
     setDisplayLevel(null);
     setConfidenceDelta(null);
-    setHintUnlocked(false);
-    setHintVisible(false);
     // Explicit as well as the hook's own reset on a changed term: a wrong last item is
     // requeued straight after itself, and that retry asks for the same word twice running.
     resetAnswer();
@@ -202,8 +197,6 @@ export default function StudySession({ items, collectionID, doneTitle, error, re
       if (!typingStep) {
         const num = parseInt(e.key);
         if (num >= 1 && num <= item.options.length) { e.preventDefault(); toggle(item.options[num - 1].text); }
-        // Keyboard has no hold gesture, so h toggles instead: press to read, press again to hide.
-        if (e.key === "h" && item.hint) { e.preventDefault(); setHintUnlocked(true); setHintVisible((v) => !v); }
       }
       // A focused button answers to Enter itself; handling it here as well would submit and
       // then advance on a single press.
@@ -323,46 +316,7 @@ export default function StudySession({ items, collectionID, doneTitle, error, re
 
           <div className="flex items-center justify-between min-h-[44px]">
             <div className="flex items-center gap-2">
-              {/* A hint is offered, never pushed: the first press unlocks it, and after that it is
-                  only on screen while the learner asks for it — hovering with a mouse, holding the
-                  button on a touch screen. The popup floats above the row, so revealing it never
-                  moves the question or the options. */}
-              {item.hint && (
-                <div className="relative">
-                  <button
-                    type="button"
-                    data-testid="hint-button"
-                    onClick={() => { setHintUnlocked(true); setHintVisible(true); }}
-                    onMouseEnter={() => hintUnlocked && setHintVisible(true)}
-                    onMouseLeave={() => setHintVisible(false)}
-                    onBlur={() => setHintVisible(false)}
-                    // preventDefault keeps the tap from also firing a click, so hold-to-read and
-                    // press-to-unlock stay one gesture.
-                    onTouchStart={(e) => { e.preventDefault(); setHintUnlocked(true); setHintVisible(true); }}
-                    onTouchEnd={() => setHintVisible(false)}
-                    onTouchCancel={() => setHintVisible(false)}
-                    onContextMenu={(e) => e.preventDefault()}
-                    // No title: the browser's own tooltip would show up underneath our popup.
-                    aria-label="Show hint"
-                    className={`select-none text-base leading-none w-9 h-9 rounded-lg border transition-colors ${
-                      hintVisible
-                        ? "border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20"
-                        : "border-gray-300 dark:border-slate-600 hover:border-amber-300 dark:hover:border-amber-700 hover:bg-amber-50 dark:hover:bg-amber-900/20"
-                    }`}
-                  >
-                    💡
-                  </button>
-                  {hintVisible && (
-                    <div
-                      role="tooltip"
-                      data-testid="hint-text"
-                      className="absolute top-0 left-full ml-2 z-10 w-72 max-w-[80vw] rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-lg px-4 py-3 text-left text-sm text-gray-600 dark:text-slate-300"
-                    >
-                      {item.hint}
-                    </div>
-                  )}
-                </div>
-              )}
+              <HintButton key={`${index}:${item.sourceID}`} hint={item.hint ?? ""} hotkey={!typingStep} />
             </div>
             <div className="flex items-center gap-2 ml-auto">
               {submitted && loggedIn && !item.isRetry && (

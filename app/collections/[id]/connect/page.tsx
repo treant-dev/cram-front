@@ -17,7 +17,7 @@ export default function ConnectPage(props: PageProps<"/collections/[id]/connect"
   const [terms, setTerms] = useState<ConnectTile[]>([]);
   const [definitions, setDefinitions] = useState<ConnectTile[]>([]);
   const [connections, setConnections] = useState<Record<string, string>>({}); // termId -> defId
-  const [selectedTerm, setSelectedTerm] = useState<string | null>(null);
+  const [selected, setSelected] = useState<{ kind: "term" | "def"; id: string } | null>(null);
   const [checked, setChecked] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -45,15 +45,9 @@ export default function ConnectPage(props: PageProps<"/collections/[id]/connect"
     setTerms(board.terms);
     setDefinitions(board.definitions);
     setConnections({});
-    setSelectedTerm(null);
+    setSelected(null);
     setChecked(false);
   }, [cards]);
-
-  const tryAgain = useCallback(() => {
-    setConnections({});
-    setSelectedTerm(null);
-    setChecked(false);
-  }, []);
 
   // Recompute line endpoints (term right-center → def left-center) after layout.
   useEffect(() => {
@@ -87,29 +81,33 @@ export default function ConnectPage(props: PageProps<"/collections/[id]/connect"
   const isCorrectTerm = (t: ConnectTile) => { const d = connections[t.id]; return !!d && cardIdOf(d) === t.cardId; };
   const correctCount = terms.filter(isCorrectTerm).length;
 
-  function onTerm(id: string) {
+  const termOfDef = (defId: string) => Object.keys(connections).find((t) => connections[t] === defId) ?? null;
+
+  // Either column can be picked first; a click in the opposite column links the pair.
+  function onTile(kind: "term" | "def", id: string) {
     if (checked) return;
-    setSelectedTerm((prev) => (prev === id ? null : id));
-  }
-  function onDef(id: string) {
-    if (checked) return;
-    if (selectedTerm) {
+    if (selected?.kind === kind && selected.id === id) { setSelected(null); return; }
+    if (selected && selected.kind !== kind) {
+      const termId = kind === "term" ? id : selected.id;
+      const defId = kind === "def" ? id : selected.id;
       setConnections((prev) => {
         const next = { ...prev };
-        for (const t of Object.keys(next)) if (next[t] === id) delete next[t]; // a def links to one term
-        next[selectedTerm] = id;
+        delete next[termId]; // a term links to one def
+        for (const t of Object.keys(next)) if (next[t] === defId) delete next[t]; // a def links to one term
+        next[termId] = defId;
         return next;
       });
-      setSelectedTerm(null);
-    } else {
-      // no term selected → clicking a linked definition disconnects it
-      setConnections((prev) => {
-        const next = { ...prev };
-        let changed = false;
-        for (const t of Object.keys(next)) if (next[t] === id) { delete next[t]; changed = true; }
-        return changed ? next : prev;
-      });
+      setSelected(null);
+      return;
     }
+    // nothing selected in the other column → clicking a linked tile disconnects it
+    const linkedTerm = kind === "term" ? (id in connections ? id : null) : termOfDef(id);
+    if (linkedTerm) {
+      setConnections((prev) => { const next = { ...prev }; delete next[linkedTerm]; return next; });
+      setSelected(null);
+      return;
+    }
+    setSelected({ kind, id });
   }
 
   function check() {
@@ -123,15 +121,15 @@ export default function ConnectPage(props: PageProps<"/collections/[id]/connect"
     }
   }
 
+  // Leaving is one of the two things worth doing at the foot of a board, so it sits with the
+  // other one rather than alone at the bottom of the page.
   const backLink = (
-    <div className="flex justify-center pb-10">
-      <Link
-        href={collectionID ? `/collections/${collectionID}` : "/collections"}
-        className="inline-flex items-center gap-1 text-sm font-medium px-3 py-1.5 rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors"
-      >
-        ← Back to collection
-      </Link>
-    </div>
+    <Link
+      href={collectionID ? `/collections/${collectionID}` : "/collections"}
+      className="inline-flex items-center gap-1 text-sm font-medium px-5 py-2 rounded-xl border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors"
+    >
+      ← Back to collection
+    </Link>
   );
 
   if (error) {
@@ -174,14 +172,14 @@ export default function ConnectPage(props: PageProps<"/collections/[id]/connect"
   const tileCls = (kind: "term" | "def", tile: ConnectTile) => {
     const connected = kind === "term" ? tile.id in connections : Object.values(connections).includes(tile.id);
     const correct = kind === "term" ? isCorrectTerm(tile) : (() => {
-      const termId = Object.keys(connections).find((t) => connections[t] === tile.id);
+      const termId = termOfDef(tile.id);
       return !!termId && cardIdOf(termId) === tile.cardId;
     })();
     const base = "min-h-12 rounded-xl border px-3 py-2 text-sm text-center break-words transition-colors select-none";
     if (checked) {
       return `${base} ${connected && correct ? "border-green-400 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300" : "border-red-400 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-300"} cursor-default`;
     }
-    if (kind === "term" && selectedTerm === tile.id) {
+    if (selected?.kind === kind && selected.id === tile.id) {
       return `${base} border-indigo-500 bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 ring-2 ring-indigo-400 cursor-pointer`;
     }
     if (connected) {
@@ -200,10 +198,9 @@ export default function ConnectPage(props: PageProps<"/collections/[id]/connect"
             {checked
               ? <span>{correctCount} / {terms.length} correct</span>
               : <span>{connectedCount} / {terms.length} linked</span>}
-            <button onClick={restart} className="font-medium px-3 py-1.5 rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors">Restart</button>
           </div>
         </div>
-        <p className="text-xs text-gray-400 dark:text-slate-500 mb-4">Click a term, then its definition to link them.</p>
+        <p className="text-xs text-gray-400 dark:text-slate-500 mb-4">Click a term and its definition — in either order — to link them.</p>
 
         <div ref={containerRef} className="relative">
           <svg className="absolute inset-0 w-full h-full pointer-events-none z-10" data-testid="connect-lines">
@@ -220,26 +217,31 @@ export default function ConnectPage(props: PageProps<"/collections/[id]/connect"
           <div className="grid grid-cols-2 gap-x-16 gap-y-3">
             <div className="flex flex-col gap-3">
               {terms.map((t) => (
-                <button key={t.id} ref={(el) => { termRefs.current[t.id] = el; }} data-testid="connect-term" onClick={() => onTerm(t.id)} disabled={checked} className={tileCls("term", t)}>{t.text}</button>
+                <button key={t.id} ref={(el) => { termRefs.current[t.id] = el; }} data-testid="connect-term" onClick={() => onTile("term", t.id)} disabled={checked} className={tileCls("term", t)}>{t.text}</button>
               ))}
             </div>
             <div className="flex flex-col gap-3">
               {definitions.map((d) => (
-                <button key={d.id} ref={(el) => { defRefs.current[d.id] = el; }} data-testid="connect-def" onClick={() => onDef(d.id)} disabled={checked} className={tileCls("def", d)}>{d.text}</button>
+                <button key={d.id} ref={(el) => { defRefs.current[d.id] = el; }} data-testid="connect-def" onClick={() => onTile("def", d.id)} disabled={checked} className={tileCls("def", d)}>{d.text}</button>
               ))}
             </div>
           </div>
         </div>
 
-        <div className="flex justify-center mt-6">
+        {/* Leaving on the left, the one thing to press in the middle — the same footing as cram. */}
+        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 mt-6 pb-10">
+          <div className="justify-self-start">{backLink}</div>
+          <div className="justify-self-center">
           {checked ? (
-            <button onClick={tryAgain} className="bg-indigo-600 text-white px-5 py-2 rounded-xl font-medium hover:bg-indigo-700 transition-colors">Try again</button>
+            // Nothing to redo: the answers are on the board. The only move left is another
+            // board, dealt from the collection the same way this one was.
+            <button onClick={restart} className="bg-indigo-600 text-white px-5 py-2 rounded-xl font-medium hover:bg-indigo-700 transition-colors">Go next →</button>
           ) : (
             <button onClick={check} disabled={!allConnected} className="bg-indigo-600 text-white px-5 py-2 rounded-xl font-medium hover:bg-indigo-700 disabled:opacity-50 transition-colors">Check</button>
           )}
+          </div>
         </div>
       </main>
-      {backLink}
     </div>
   );
 }

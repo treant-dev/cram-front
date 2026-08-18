@@ -8,6 +8,7 @@ import { isLoggedIn } from "@/lib/auth";
 import Navbar from "@/components/Navbar";
 import TypeAnswer, { useGuidedAnswer } from "@/components/TypeAnswer";
 import LevelDot from "@/components/LevelDot";
+import HintButton from "@/components/HintButton";
 import { applyAnswer, nextReviewFromLevel } from "@/lib/progress";
 
 const SESSION_SIZE = 7; // cards per round, matching blitz
@@ -24,10 +25,6 @@ export default function TypePage(props: PageProps<"/collections/[id]/type">) {
   const [score, setScore] = useState(0);
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Per card, as in blitz: the first press unlocks the hint, and it is on screen only while
-  // asked for. Asking costs nothing — the term still has to be typed.
-  const [hintUnlocked, setHintUnlocked] = useState(false);
-  const [hintVisible, setHintVisible] = useState(false);
   // Where each card stands, so this mode carries the same level dot as blitz. The level shown
   // moves the moment a verdict lands and is then trued up from the server's own answer.
   const [progress, setProgress] = useState<Record<string, ProgressEntry>>({});
@@ -88,8 +85,6 @@ export default function TypePage(props: PageProps<"/collections/[id]/type">) {
     setVerdict(null);
     resetAnswer();
     setDisplayLevel(null);
-    setHintUnlocked(false);
-    setHintVisible(false);
     if (index + 1 >= cards.length) { setDone(true); return; }
     setIndex((i) => i + 1);
   }, [index, cards.length, resetAnswer]);
@@ -179,41 +174,9 @@ export default function TypePage(props: PageProps<"/collections/[id]/type">) {
           )}
 
           <div className="flex items-center justify-between">
-            {/* Offered, never pushed — the same bulb as blitz. No keyboard shortcut here: every
-                letter belongs to the answer being typed. */}
-            {card.Hint ? (
-              <div className="relative">
-                <button
-                  type="button"
-                  data-testid="hint-button"
-                  onClick={() => { setHintUnlocked(true); setHintVisible(true); }}
-                  onMouseEnter={() => hintUnlocked && setHintVisible(true)}
-                  onMouseLeave={() => setHintVisible(false)}
-                  onBlur={() => setHintVisible(false)}
-                  onTouchStart={(e) => { e.preventDefault(); setHintUnlocked(true); setHintVisible(true); }}
-                  onTouchEnd={() => setHintVisible(false)}
-                  onTouchCancel={() => setHintVisible(false)}
-                  onContextMenu={(e) => e.preventDefault()}
-                  aria-label="Show hint"
-                  className={`select-none text-base leading-none w-9 h-9 rounded-lg border transition-colors ${
-                    hintVisible
-                      ? "border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20"
-                      : "border-gray-300 dark:border-slate-600 hover:border-amber-300 dark:hover:border-amber-700 hover:bg-amber-50 dark:hover:bg-amber-900/20"
-                  }`}
-                >
-                  💡
-                </button>
-                {hintVisible && (
-                  <div
-                    role="tooltip"
-                    data-testid="hint-text"
-                    className="absolute top-0 left-full ml-2 z-10 w-72 max-w-[80vw] rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-lg px-4 py-3 text-left text-sm text-gray-600 dark:text-slate-300"
-                  >
-                    {card.Hint}
-                  </div>
-                )}
-              </div>
-            ) : <span />}
+            {/* Offered, never pushed — the same bulb as blitz. No keyboard shortcut here:
+                every letter belongs to the answer being typed. */}
+            <div className="flex items-center gap-2"><HintButton key={card.ID} hint={card.Hint} /></div>
             {/* Nothing to press until the card has ended: the letters themselves are the
                 whole interaction. */}
             {verdict === null ? <span /> : (
