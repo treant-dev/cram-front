@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { canonicalTerm, letterBank, letterForBlank, slotCount, slotsOf, type Slot } from "@/lib/typing";
+import { letterBank, letterForBlank, slotCount, slotsOf, type Slot } from "@/lib/typing";
 
 // Wrong letters a card survives. Three is enough to recover from a slip or a genuinely
 // uncertain letter, and few enough that the round is still a test of knowing the word.
@@ -46,7 +46,7 @@ export function useGuidedAnswer(term: string, onEnd: (right: boolean) => void) {
 }
 
 type Props = {
-  /** The term being spelled out; alternatives after a slash are ignored for the blanks. */
+  /** The term being spelled out, exactly as the card writes it. */
   term: string;
   /** Letters entered so far, in order — fixed characters are not part of this. */
   letters: string;
@@ -70,11 +70,10 @@ type Props = {
  * to delete; what a wrong pick costs is one of the card's three tries.
  */
 export default function TypeAnswer({ term, letters, onChange, onMistake, mistakes, maxMistakes, verdict }: Props) {
-  const canonical = useMemo(() => canonicalTerm(term), [term]);
-  const slots = useMemo(() => slotsOf(canonical), [canonical]);
+  const slots = useMemo(() => slotsOf(term), [term]);
   const typed = [...letters];
   const position = typed.length;
-  const bank = useMemo(() => letterBank(canonical), [canonical]);
+  const bank = useMemo(() => letterBank(term), [term]);
   const locked = verdict != null;
   const done = position >= bank.length; // one tile per blank, so the bank counts them
 
@@ -84,7 +83,7 @@ export default function TypeAnswer({ term, letters, onChange, onMistake, mistake
   // Held with the blank they belong to, so moving on clears them without an effect to keep
   // in step.
   const [rejected, setRejected] = useState<{ term: string; pos: number; keys: string[] }>({ term: "", pos: 0, keys: [] });
-  const struck = rejected.term === canonical && rejected.pos === position ? rejected.keys : [];
+  const struck = rejected.term === term && rejected.pos === position ? rejected.keys : [];
 
   // A tile is spent once its letter has been written down. Matched in order, so a word with
   // two f's spends the first f tile before the second — which of the two hardly matters, but
@@ -106,11 +105,11 @@ export default function TypeAnswer({ term, letters, onChange, onMistake, mistake
   function press(tile: number) {
     const key = bank[tile];
     if (locked || done || spent[tile] || struck.includes(key)) return;
-    if (key === letterForBlank(canonical, position)) {
+    if (key === letterForBlank(term, position)) {
       onChange(letters + key);
       return;
     }
-    setRejected({ term: canonical, pos: position, keys: [...struck, key] });
+    setRejected({ term, pos: position, keys: [...struck, key] });
     onMistake();
   }
 
