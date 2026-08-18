@@ -480,3 +480,144 @@ test("match: a completed pair is recorded as progress", async ({ page }) => {
     expect(prog.cards[card!.ID]?.level, "matched card rose from level 1").toBe(2);
   }).toPass({ timeout: 15_000 });
 });
+
+// ── Cram ───────────────────────────────────────────────────────────────────────
+// The round is drawn from the blitz queue, so the cards it picks are not known up front;
+// every step is answered by reading the prompt and looking the answer up in the deck.
+
+type Deck = { byDefinition: Map<string, string>; byTerm: Map<string, string> };
+
+async function goBasicsDeck(page: import("@playwright/test").Page): Promise<{ id: string; deck: Deck }> {
+  const cols = await (await page.request.get(`${API}/collections`)).json();
+  const go = (cols as Array<{ ID: string; Title: string }>).find((c) => c.Title === "Go Basics");
+  expect(go, "seed collection present").toBeTruthy();
+  const detail = await (await page.request.get(`${API}/collections/${go!.ID}`)).json();
+  const cards = (detail.Cards ?? []) as Array<{ Term: string; Definition: string }>;
+  return {
+    id: go!.ID,
+    deck: {
+      byDefinition: new Map(cards.map((c) => [c.Definition, c.Term])),
+      byTerm: new Map(cards.map((c) => [c.Term, c.Definition])),
+    },
+  };
+}
+
+/** Answers the step on screen. Returns the stage it answered and the prompt it answered it to. */
+async function cramStep(page: import("@playwright/test").Page, deck: Deck, wrong = false) {
+  const stage = (await page.getByTestId("cram-stage").innerText()).trim();
+  const prompt = (await page.getByTestId("cram-prompt").innerText()).trim();
+  const term = stage === "Explain" ? prompt : deck.byDefinition.get(prompt)!;
+  expect(term, `deck knows the answer to "${prompt}"`).toBeTruthy();
+
+  if (stage === "Recognise" || stage === "Explain") {
+    const want = stage === "Explain" ? deck.byTerm.get(term)! : term;
+    const options = page.getByTestId("option");
+    const pick = wrong
+      ? options.filter({ hasNotText: exact(want) }).first()
+      : options.filter({ hasText: exact(want) }).first();
+    await pick.click();
+    await page.getByRole("button", { name: "Confirm" }).click();
+  } else if (stage === "Spell") {
+    for (const ch of [...term].filter((c) => /\p{L}/u.test(c))) {
+      await page.getByTestId("letter-key").filter({ hasText: exact(ch.toLowerCase()) }).first().click();
+    }
+  } else {
+    await page.getByTestId("cram-write-input").fill(wrong ? "zzzz" : term);
+    await page.getByTestId("cram-write-check").click();
+  }
+
+  await page.getByTestId("cram-next").click();
+  return { stage, prompt };
+}
+
+/** Plays until the done screen, answering everything right. Returns the steps it took. */
+async function playCram(page: import("@playwright/test").Page, deck: Deck, limit = 30) {
+  const trail: { stage: string; prompt: string }[] = [];
+  while (trail.length < limit && (await page.getByTestId("cram-stage").count()) > 0) {
+    trail.push(await cramStep(page, deck));
+  }
+  return trail;
+}
+
+test("cram: every card is asked at one stage before the next stage begins", async ({ page }) => {
+  test.setTimeout(90_000);
+  await login(page);
+  const { id, deck } = await goBasicsDeck(page);
+
+  await page.goto(`/collections/${id}`);
+  // The navbar logo is also called Cram, so the mini-game button is found by its aria-label.
+  await page.getByLabel("Cram").click();
+  await page.waitForURL(/\/cram$/);
+  await expect(page.getByTestId("cram-prompt")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId("cram-stage")).toHaveText("Recognise");
+
+  await expect(page.getByTestId("cram-progress")).toHaveText("Stage 1 / 4");
+
+  // Answer until the round moves on: everything before that is the first stage, once per card.
+  const prompts: string[] = [];
+  while ((await page.getByTestId("cram-stage").innerText()).trim() === "Recognise" && prompts.length < 10) {
+    prompts.push((await cramStep(page, deck)).prompt);
+  }
+  expect(prompts.length, "the whole round is drilled at stage one").toBeGreaterThan(1);
+  expect(new Set(prompts).size, "every card asked once").toBe(prompts.length);
+  await expect(page.getByTestId("cram-stage")).toHaveText("Explain");
+  await expect(page.getByTestId("cram-progress")).toHaveText("Stage 2 / 4");
+});
+
+test("cram: a wrong answer brings the card back later in the round", async ({ page }) => {
+  test.setTimeout(90_000);
+  await login(page);
+  const { id, deck } = await goBasicsDeck(page);
+
+  await page.goto(`/collections/${id}/cram`);
+  await expect(page.getByTestId("cram-prompt")).toBeVisible({ timeout: 30_000 });
+  const missed = (await page.getByTestId("cram-prompt").innerText()).trim();
+  await cramStep(page, deck, true);
+
+  // Not asked again on the spot: the rest of the stage runs first.
+  await expect(page.getByTestId("cram-prompt")).not.toHaveText(missed);
+
+  const trail = await playCram(page, deck);
+  const asked = trail.filter((t) => t.stage === "Recognise" && t.prompt === missed);
+  expect(asked.length, "the failed card is asked the easiest question again").toBeGreaterThanOrEqual(1);
+});
+
+test("cram: a clean round is reported as progress", async ({ page }) => {
+  test.setTimeout(120_000);
+  await login(page);
+  const { id, deck } = await goBasicsDeck(page);
+  await page.request.delete(`${API}/collections/${id}/progress`);
+
+  await page.goto(`/collections/${id}/cram`);
+  await expect(page.getByTestId("cram-prompt")).toBeVisible({ timeout: 30_000 });
+  await playCram(page, deck);
+  await expect(page.getByText("Perfect round!")).toBeVisible({ timeout: 10_000 });
+  // The round ends on its cards, each marked with how it went.
+  const size = await page.getByTestId("cram-summary-row").count();
+  expect(size).toBeGreaterThan(1);
+  await expect(page.locator('[data-testid="cram-summary-row"][data-outcome="clean"]')).toHaveCount(size);
+
+  // Go next deals another round without leaving the page.
+  await page.getByTestId("cram-go-next").click();
+  await expect(page.getByTestId("cram-prompt")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId("cram-stage")).toHaveText("Recognise");
+
+  await expect(async () => {
+    const prog = await (await page.request.get(`${API}/collections/${id}/progress`)).json();
+    const levelled = Object.values(prog.cards as Record<string, { level: number }>).filter((e) => e.level === 2);
+    expect(levelled.length).toBeGreaterThanOrEqual(size);
+  }).toPass({ timeout: 15_000 });
+});
+
+test("cram: inactive when a collection has fewer than 5 cards", async ({ page }) => {
+  test.setTimeout(60_000);
+  await login(page);
+  const cols = await (await page.request.get(`${API}/collections`)).json();
+  const pn = (cols as Array<{ ID: string; Title: string }>).find((c) => c.Title === "Private Notes");
+  expect(pn, "seed collection present").toBeTruthy();
+
+  await page.goto(`/collections/${pn!.ID}`);
+  await expect(page.getByTitle("Cram needs at least 5 cards")).toBeVisible({ timeout: 30_000 });
+  // Shown but inert: rendered as plain text, not a link.
+  await expect(page.locator('a[aria-label="Cram"]')).toHaveCount(0);
+});

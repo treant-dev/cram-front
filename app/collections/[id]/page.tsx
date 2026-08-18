@@ -68,10 +68,13 @@ function IconBtn({ emoji, title, onClick, danger, type = "button", form, disable
 
 // Mini-games playable over a collection's cards. Add one here and it becomes a button
 // next to Blitz — each game names itself rather than hiding behind a 🎮 menu.
-const MINI_GAMES: { emoji: string; label: string; slug: string }[] = [
+const MINI_GAMES: { emoji: string; label: string; slug: string; needsAuth?: boolean }[] = [
   { emoji: "🃏", label: "Match", slug: "match" },
   { emoji: "🔗", label: "Connect", slug: "connect" },
   { emoji: "⌨️", label: "Type", slug: "type" },
+  // Cram is drawn from the blitz queue and reports levels, so it only means anything to a
+  // signed-in learner — for anyone else the button would lead to a redirect.
+  { emoji: "🧠", label: "Cram", slug: "cram", needsAuth: true },
 ];
 
 // Form fields box (used inside CardForm/TestForm; Save/Cancel live in a side panel).
@@ -1038,6 +1041,7 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
   const hasFlip = cards.length >= 2;               // flip-card mode needs ≥2 cards
   const hasBlitz = cards.length >= 1;              // blitz is cards-only
   const hasMatch = cards.length >= 5;              // matching mini-game needs ≥5 pairs
+  const hasExercises = allExercises.length >= 1;   // worksheet session needs ≥1 exercise/quiz
   const allItemKeys = cards.map((c) => `card:${c.ID}`); // progress is card-only
   const allMastered = allItemKeys.length > 0 && allItemKeys.every((k) => itemProgress[k]?.level === 7);
 
@@ -1098,7 +1102,7 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
         )}
 
         {/* Study mode buttons + quick-add */}
-        {!editMode && (hasBlitz || isOwner || currentUserID !== null) && (
+        {!editMode && (hasBlitz || hasExercises || isOwner || currentUserID !== null) && (
           <div className="flex gap-3 mb-8 flex-wrap items-center">
             {hasBlitz && currentUserID !== null && (
               allMastered ? (
@@ -1109,7 +1113,7 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
                 </Link>
               )
             )}
-            {cards.length >= 1 && MINI_GAMES.map((g) => (
+            {cards.length >= 1 && MINI_GAMES.filter((g) => !g.needsAuth || currentUserID !== null).map((g) => (
               hasMatch ? (
                 <Link key={g.slug} href={`/collections/${collection.ID}/${g.slug}`} title={g.label} aria-label={g.label} className="bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors">
                   {g.emoji}
@@ -1123,9 +1127,11 @@ export default function CollectionPage(props: PageProps<"/collections/[id]">) {
             {hasFlip && (
               <Link href={`/collections/${collection.ID}/cards`} className="bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors">Cards</Link>
             )}
-            {/* No Exercise button: unanswered exercises open at the start of Blitz. Redoing an
-                answered one goes through the editor's reset, which is what clears the saved
-                answers blitz reads. */}
+            {/* Exercises also open at the start of Blitz; this button goes straight to the
+                worksheet session for collections that have any. */}
+            {hasExercises && (
+              <Link href={`/collections/${collection.ID}/exercises`} className="bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors">Exercises</Link>
+            )}
             {currentUserID !== null && !isOwner && (
               <button
                 onClick={toggleFollow}

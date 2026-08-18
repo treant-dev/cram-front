@@ -40,7 +40,7 @@ export default function OptionButton({ index, text, multi, selected, submitted, 
     <div className="relative">
       <span className="absolute right-full mr-2 top-1/2 -translate-y-1/2 w-5 text-center text-xs font-mono text-gray-400 dark:text-slate-500">{index + 1}</span>
       <div className="flex flex-col gap-1">
-        <button onClick={onClick} disabled={disabled} className={containerClass()}>
+        <button data-testid="option" onClick={onClick} disabled={disabled} className={containerClass()}>
           <span className={indicatorClass()}>
             {selected && !submitted && (
               multi
