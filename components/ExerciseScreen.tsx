@@ -1,6 +1,10 @@
-import type { ReactNode } from "react";
+"use client";
+
+import { useState, type ReactNode } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
+import { ConfirmDialog } from "@/components/Modal";
 import SpeakButton from "@/components/SpeakButton";
 
 type Props = {
@@ -136,13 +140,37 @@ export function ExerciseLoading() {
   );
 }
 
-export function BackLink({ collectionID }: { collectionID: string }) {
+/**
+ * The way back to the collection. Mid-round it asks first: the button sits under the answer's
+ * own buttons, and one stray press would otherwise throw the round away. Pass `confirm={false}`
+ * where there is nothing left to lose — a finished round, an empty one.
+ */
+export function BackLink({ collectionID, confirm = true }: { collectionID: string; confirm?: boolean }) {
+  const router = useRouter();
+  const [asking, setAsking] = useState(false);
+  const href = collectionID ? `/collections/${collectionID}` : "/collections";
   return (
-    <Link
-      href={collectionID ? `/collections/${collectionID}` : "/collections"}
-      className="inline-flex items-center gap-1 text-sm font-medium px-3 py-1.5 rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors whitespace-nowrap"
-    >
-      ← Back to collection
-    </Link>
+    <>
+      <Link
+        href={href}
+        onClick={(e) => {
+          // A modified click opens a new tab and leaves this round alone, so it needs no asking.
+          if (!confirm || e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+          e.preventDefault();
+          setAsking(true);
+        }}
+        className="inline-flex items-center gap-1 text-sm font-medium px-3 py-1.5 rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors whitespace-nowrap"
+      >
+        ← Back to collection
+      </Link>
+      {asking && (
+        <ConfirmDialog
+          message="Leave this round and go back to the collection?"
+          confirmLabel="Leave"
+          onConfirm={() => { setAsking(false); router.push(href); }}
+          onCancel={() => setAsking(false)}
+        />
+      )}
+    </>
   );
 }

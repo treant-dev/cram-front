@@ -420,6 +420,23 @@ test("typing game: three wrong letters end the card and show the term", async ({
   await expect(page.getByText("2 / 7")).toBeVisible();
 });
 
+test("leaving mid-round asks first, and stays on cancel", async ({ page }) => {
+  await login(page);
+  const id = await dictionary(page);
+  await page.goto(`/collections/${id}/type`);
+  await expect(page.getByTestId("type-slots")).toBeVisible({ timeout: 30_000 });
+
+  const back = page.getByRole("link", { name: /Back to collection/i });
+  await back.click();
+  await expect(page.getByText("Leave this round and go back to the collection?")).toBeVisible();
+  await page.getByRole("button", { name: "Cancel" }).click();
+  await expect(page).toHaveURL(new RegExp(`/collections/${id}/type$`));
+
+  await back.click();
+  await page.getByRole("button", { name: "Leave" }).click();
+  await expect(page).toHaveURL(new RegExp(`/collections/${id}$`));
+});
+
 test("flashcards show a card's hint on the back, in its own card", async ({ page }) => {
   test.setTimeout(60_000);
   await login(page);

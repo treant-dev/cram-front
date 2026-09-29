@@ -132,6 +132,7 @@ export default function CramPage(props: PageProps<"/collections/[id]/cram">) {
   useEffect(() => { resetGuided(); }, [state.steps, resetGuided]);
 
   const backLink = <BackLink collectionID={collectionID} />;
+  const leaveLink = <BackLink collectionID={collectionID} confirm={false} />;
 
   if (error) return <ExerciseError message={error} />;
 
@@ -139,7 +140,7 @@ export default function CramPage(props: PageProps<"/collections/[id]/cram">) {
   // its terms too long for the written stages.
   if (loaded && state.cards.length === 0) {
     return (
-      <ExerciseMessage back={backLink}>
+      <ExerciseMessage back={leaveLink}>
         <p className="text-gray-500 dark:text-slate-400">Nothing to cram here right now.</p>
       </ExerciseMessage>
     );
@@ -150,7 +151,7 @@ export default function CramPage(props: PageProps<"/collections/[id]/cram">) {
     const result = roundVerdict(score(state), total);
     return (
       <ExerciseMessage
-        back={backLink}
+        back={leaveLink}
         actions={
           <button data-testid="cram-go-next" onClick={goNext} className={primaryButton}>
             Go next →

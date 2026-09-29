@@ -121,7 +121,7 @@ export default function ConnectPage(props: PageProps<"/collections/[id]/connect"
     }
   }
 
-  const backLink = <BackLink collectionID={collectionID} />;
+  const backLink = <BackLink collectionID={collectionID} confirm={!checked} />;
 
   if (error) return <ExerciseError message={error} />;
 
@@ -140,7 +140,7 @@ export default function ConnectPage(props: PageProps<"/collections/[id]/connect"
 
   if (terms.length < 2) {
     return (
-      <ExerciseMessage back={backLink}>
+      <ExerciseMessage back={<BackLink collectionID={collectionID} confirm={false} />}>
         <p className="text-gray-500 dark:text-slate-400">Connect needs at least 2 cards.</p>
       </ExerciseMessage>
     );

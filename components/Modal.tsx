@@ -39,12 +39,15 @@ export function ConfirmDialog({ message, confirmLabel = "Confirm", onConfirm, on
   onCancel: () => void;
 }) {
   useEffect(() => {
+    // Captured and stopped here, so while the dialog is open the page underneath hears no keys:
+    // an Enter meant for "Leave" must not also confirm an answer or press a letter tile.
     function onKey(e: KeyboardEvent) {
+      e.stopPropagation();
       if (e.key === "Enter") { e.preventDefault(); onConfirm(); }
       else if (e.key === "Escape" || e.key === "Backspace") { e.preventDefault(); onCancel(); }
     }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
   }, [onConfirm, onCancel]);
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 dark:bg-black/60" onClick={onCancel}>

@@ -111,7 +111,7 @@ export default function MatchPage(props: PageProps<"/collections/[id]/match">) {
     );
   };
 
-  const backLink = <BackLink collectionID={collectionID} />;
+  const backLink = <BackLink collectionID={collectionID} confirm={!solved} />;
 
   if (error) return <ExerciseError message={error} />;
 
@@ -130,7 +130,7 @@ export default function MatchPage(props: PageProps<"/collections/[id]/match">) {
 
   if (tiles.length < 10) {
     return (
-      <ExerciseMessage back={backLink}>
+      <ExerciseMessage back={<BackLink collectionID={collectionID} confirm={false} />}>
         <p className="text-gray-500 dark:text-slate-400">The matching game needs at least 5 cards.</p>
       </ExerciseMessage>
     );
