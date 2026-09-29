@@ -182,24 +182,34 @@ function stepFor(card: CramCard, stage: Stage, pool: PoolEntry[], rand: () => nu
  * card sitting at the stage in hand; a card that just passed one stage is picked up again at
  * the next, which is what makes the first pass a straight run through all four. A card that
  * failed has fallen behind the stage cursor, so it waits for the next pass — the retry phase.
+ *
+ * Which card of the stage comes first is drawn at random, so the order changes from stage to
+ * stage and the learner cannot answer by position. The card just asked is passed over while
+ * another one is waiting, so no card is asked twice running unless it is the only one left.
  */
-function pick(cards: CardState[], pass: number, fromStage: number): { index: number; stage: number } | null {
+function pick(
+  cards: CardState[], pass: number, fromStage: number, lastCardID: string | undefined, rand: () => number,
+): { index: number; stage: number } | null {
   for (let s = fromStage; s < STAGES.length; s++) {
-    const index = cards.findIndex(
-      (c) => !c.out && c.stage === s && !(c.servedPass === pass && c.servedStage === s)
-    );
-    if (index >= 0) return { index, stage: s };
+    const waiting = cards
+      .map((c, index) => ({ c, index }))
+      .filter(({ c }) => !c.out && c.stage === s && !(c.servedPass === pass && c.servedStage === s));
+    if (waiting.length === 0) continue;
+    const fresh = waiting.filter(({ c }) => c.card.id !== lastCardID);
+    const from = fresh.length > 0 ? fresh : waiting;
+    return { index: from[Math.floor(rand() * from.length)].index, stage: s };
   }
   return null;
 }
 
 function serveNext(state: CramState): CramState {
   let pass = state.pass;
-  let found = pick(state.cards, pass, state.stageCursor);
+  const last = state.step?.cardID;
+  let found = pick(state.cards, pass, state.stageCursor, last, state.rand);
   if (!found) {
     // The pass is spent. Anything still in the round starts the next one from its own stage.
     pass += 1;
-    found = pick(state.cards, pass, 0);
+    found = pick(state.cards, pass, 0, last, state.rand);
   }
   if (!found) return { ...state, step: null, verdict: null, done: true };
 

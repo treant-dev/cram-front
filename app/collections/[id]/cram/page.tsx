@@ -1,14 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { isLoggedIn } from "@/lib/auth";
-import Navbar from "@/components/Navbar";
+import ExerciseScreen, { BackLink, ExerciseError, ExerciseLoading, ExerciseMessage } from "@/components/ExerciseScreen";
 import HintButton from "@/components/HintButton";
 import OptionButton from "@/components/OptionButton";
-import SpeakButton from "@/components/SpeakButton";
 import TypeAnswer, { useGuidedAnswer } from "@/components/TypeAnswer";
 import TypeInput from "@/components/TypeInput";
 import {
@@ -133,38 +131,18 @@ export default function CramPage(props: PageProps<"/collections/[id]/cram">) {
   // twice running once the retry phase starts, so clear it by hand as well.
   useEffect(() => { resetGuided(); }, [state.steps, resetGuided]);
 
-  const backLink = (
-    <Link
-      href={collectionID ? `/collections/${collectionID}` : "/collections"}
-      className="inline-flex items-center gap-1 text-sm font-medium px-3 py-1.5 rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors whitespace-nowrap"
-    >
-      ← Back to collection
-    </Link>
-  );
+  const backLink = <BackLink collectionID={collectionID} />;
 
-  if (error) {
-    return (
-      <div className="min-h-screen flex flex-col">
-        <Navbar />
-        <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center px-4">
-          <p className="text-red-500">{error}</p>
-          <button onClick={() => window.history.back()} className="text-sm text-indigo-600 dark:text-indigo-400 hover:underline">Go back</button>
-        </div>
-      </div>
-    );
-  }
+  if (error) return <ExerciseError message={error} />;
 
   // Nothing to drill is an answer, not a wait: a collection can be all mastered, or all of
   // its terms too long for the written stages.
   if (loaded && state.cards.length === 0) {
     return (
-      <div className="min-h-screen flex flex-col">
-        <Navbar />
-        <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center px-4">
-          <p className="text-gray-500 dark:text-slate-400">Nothing to cram here right now.</p>
-          {backLink}
-        </div>
-      </div>
+      <ExerciseMessage>
+        <p className="text-gray-500 dark:text-slate-400">Nothing to cram here right now.</p>
+        {backLink}
+      </ExerciseMessage>
     );
   }
 
@@ -172,56 +150,42 @@ export default function CramPage(props: PageProps<"/collections/[id]/cram">) {
     const total = state.cards.length;
     const result = roundVerdict(score(state), total);
     return (
-      <div className="min-h-screen flex flex-col">
-        <Navbar />
-        <main className="flex-1 flex flex-col items-center justify-center gap-4 px-4 py-8">
-          <p className="text-5xl" aria-hidden>{result.emoji}</p>
-          <h2 className="text-2xl font-bold text-center">{result.title}</h2>
-          <p className="text-gray-500 dark:text-slate-400 text-lg">{score(state)} / {total} clean</p>
+      <ExerciseMessage>
+        <p className="text-5xl" aria-hidden>{result.emoji}</p>
+        <h2 className="text-2xl font-bold">{result.title}</h2>
+        <p className="text-gray-500 dark:text-slate-400 text-lg">{score(state)} / {total} clean</p>
 
-          {/* The words again, marked: cleanly done, done the hard way, or not done at all.
-              The round is over in a couple of minutes and every card left the screen as fast
-              as it arrived — this is the only chance to see them side by side. */}
-          <ul data-testid="cram-summary" className="w-full max-w-lg flex flex-col gap-2 mt-2">
-            {roundSummary(state).map(({ card, outcome }) => (
-              <li
-                key={card.id}
-                data-testid="cram-summary-row"
-                data-outcome={outcome}
-                className="flex items-start gap-3 rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3"
-              >
-                <span className="text-lg leading-6" aria-hidden>{OUTCOME_EMOJI[outcome]}</span>
-                <div className="min-w-0">
-                  <p className="font-medium text-gray-900 dark:text-slate-100 break-words">{card.term}</p>
-                  <p className="text-sm text-gray-500 dark:text-slate-400 break-words">{card.definition}</p>
-                </div>
-              </li>
-            ))}
-          </ul>
+        {/* The words again, marked: cleanly done, done the hard way, or not done at all.
+            The round is over in a couple of minutes and every card left the screen as fast
+            as it arrived — this is the only chance to see them side by side. */}
+        <ul data-testid="cram-summary" className="w-full max-w-lg flex flex-col gap-2 mt-2 text-left">
+          {roundSummary(state).map(({ card, outcome }) => (
+            <li
+              key={card.id}
+              data-testid="cram-summary-row"
+              data-outcome={outcome}
+              className="flex items-start gap-3 rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3"
+            >
+              <span className="text-lg leading-6" aria-hidden>{OUTCOME_EMOJI[outcome]}</span>
+              <div className="min-w-0">
+                <p className="font-medium text-gray-900 dark:text-slate-100 break-words">{card.term}</p>
+                <p className="text-sm text-gray-500 dark:text-slate-400 break-words">{card.definition}</p>
+              </div>
+            </li>
+          ))}
+        </ul>
 
-          <div className="w-full max-w-lg grid grid-cols-[1fr_auto_1fr] items-center gap-3 mt-2">
-            <div className="justify-self-start">{backLink}</div>
-            <button data-testid="cram-go-next" onClick={goNext} className="justify-self-center bg-indigo-600 text-white px-6 py-2.5 rounded-xl font-medium hover:bg-indigo-700 transition-colors">
-              Go next →
-            </button>
-          </div>
-        </main>
-      </div>
+        <div className="w-full max-w-lg grid grid-cols-[1fr_auto_1fr] items-center gap-3 mt-2">
+          <div className="justify-self-start">{backLink}</div>
+          <button data-testid="cram-go-next" onClick={goNext} className="justify-self-center bg-indigo-600 text-white px-6 py-2.5 rounded-xl font-medium hover:bg-indigo-700 transition-colors">
+            Go next →
+          </button>
+        </div>
+      </ExerciseMessage>
     );
   }
 
-  if (!step || !card) {
-    return (
-      <div className="min-h-screen flex flex-col">
-        <Navbar />
-        <main className="flex-1 flex flex-col items-center justify-center px-4 gap-3 animate-pulse">
-          <div className="w-full max-w-lg h-4 bg-gray-200 dark:bg-slate-800 rounded" />
-          <div className="w-full max-w-lg min-h-48 bg-gray-100 dark:bg-slate-800 rounded-2xl" />
-          <div className="w-full max-w-lg h-10 bg-gray-100 dark:bg-slate-800 rounded-lg" />
-        </main>
-      </div>
-    );
-  }
+  if (!step || !card) return <ExerciseLoading />;
 
   const wrong = verdict === "wrong";
   // The term is what most stages are asking for, so speaking it early would answer the
@@ -229,106 +193,83 @@ export default function CramPage(props: PageProps<"/collections/[id]/cram">) {
   const canSpeak = step.stage === "produce" || verdict !== null;
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <Navbar />
-      {/* The same three-row grid as the flashcards and the typing game: the prompt keeps its
-          place whether or not a verdict, a hint and a keyboard are showing underneath. */}
-      <main className="flex-1 grid grid-rows-[1fr_auto_1fr] px-4">
-        <div className="self-end mx-auto mb-3 w-full max-w-lg flex items-center justify-between">
-          {/* How far in the round is, counted in exercises rather than in cards: a card is only
-              finished at the very end, so a word counter sits at zero for most of a round. */}
-          <p data-testid="cram-progress" className="text-sm text-gray-400 dark:text-slate-500">
-            Stage {STAGES.indexOf(step.stage) + 1} / {STAGES.length}
-          </p>
-          <span data-testid="cram-stage" className="text-xs font-medium px-2 py-0.5 rounded-full bg-purple-100 text-purple-600">
-            {STAGE_LABEL[step.stage]}
-          </span>
-        </div>
-
-        <div className="mx-auto w-full max-w-lg min-h-48 relative bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-2xl shadow-sm flex flex-col items-center justify-center p-8 text-center gap-4">
-          {canSpeak && <SpeakButton text={card.term} className="absolute top-3 right-3" />}
-          {card.image && <img src={card.image} alt="" className="max-h-40 max-w-full rounded-lg object-contain" />}
-          <p data-testid="cram-prompt" className="text-xl font-medium text-gray-900 dark:text-slate-100">{step.prompt}</p>
-        </div>
-
-        <div className="self-start mx-auto mt-3 w-full max-w-lg flex flex-col gap-3">
-          {isChoice && (
-            <div className="flex flex-col gap-2">
-              {step.options.map((opt, i) => (
-                <OptionButton
-                  key={i}
-                  index={i}
-                  text={opt.text}
-                  multi={false}
-                  selected={selected === i}
-                  submitted={verdict !== null}
-                  isCorrect={opt.isCorrect}
-                  onClick={() => verdict === null && setSelected(i)}
-                />
-              ))}
-            </div>
-          )}
-
-          {step.stage === "build" && (
-            <TypeAnswer
-              term={step.answer}
-              {...guided}
-              verdict={verdict === null ? null : verdict === "wrong" ? "wrong" : "right"}
+    <ExerciseScreen
+      testId="cram"
+      // How far in the round is, counted in exercises rather than in cards: a card is only
+      // finished at the very end, so a word counter sits at zero for most of a round.
+      progress={`Stage ${STAGES.indexOf(step.stage) + 1} / ${STAGES.length}`}
+      badge={{ text: STAGE_LABEL[step.stage] }}
+      prompt={step.prompt}
+      image={card.image}
+      speak={canSpeak ? card.term : undefined}
+      aside={<HintButton key={state.steps} hint={card.hint} hotkey={isChoice} />}
+      back={backLink}
+      actions={<>
+        {verdict === null && isChoice && selected !== null && (
+          <button onClick={confirmChoice} className="border border-indigo-400 dark:border-indigo-600 text-indigo-600 dark:text-indigo-400 px-5 py-2 rounded-xl font-medium hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-colors">
+            Confirm
+          </button>
+        )}
+        {verdict === null && step.stage === "write" && written.trim() && (
+          <button data-testid="cram-write-check" onClick={submitWritten} className="border border-indigo-400 dark:border-indigo-600 text-indigo-600 dark:text-indigo-400 px-5 py-2 rounded-xl font-medium hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-colors">
+            Check
+          </button>
+        )}
+        {verdict !== null && (
+          <button data-testid="cram-next" onClick={advance} className="bg-indigo-600 text-white px-6 py-2.5 rounded-xl font-medium hover:bg-indigo-700 transition-colors">
+            Next →
+          </button>
+        )}
+      </>}
+      keysHint={
+        verdict !== null
+          ? "Enter to continue"
+          : isChoice
+          ? `Press 1–${step.options.length} to select · Enter to confirm`
+          : "Enter to confirm"
+      }
+    >
+      {isChoice && (
+        <div className="flex flex-col gap-2">
+          {step.options.map((opt, i) => (
+            <OptionButton
+              key={i}
+              index={i}
+              text={opt.text}
+              multi={false}
+              selected={selected === i}
+              submitted={verdict !== null}
+              isCorrect={opt.isCorrect}
+              onClick={() => verdict === null && setSelected(i)}
             />
-          )}
-
-          {step.stage === "write" && (
-            <TypeInput value={written} onChange={setWritten} verdict={verdict} onSubmit={submitWritten} />
-          )}
-
-          {/* The spelling is the lesson of both written stages — shown when it was missed, and
-              when a typo was let through. */}
-          {!isChoice && wrong && (
-            <p data-testid="cram-answer" className="text-center text-sm text-gray-600 dark:text-slate-300">
-              Correct answer: <span className="font-medium">{step.answer}</span>
-            </p>
-          )}
-          {verdict === "close" && (
-            <p data-testid="cram-answer" className="text-center text-sm text-amber-600 dark:text-amber-400">
-              Close enough — it&apos;s spelled <span className="font-medium">{step.answer}</span>
-            </p>
-          )}
-
-          {/* Leaving on the left, the one thing to press in the middle: the verb sits under the
-              answer it belongs to rather than off to one side. */}
-          <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 min-h-[44px]">
-            <div className="flex items-center gap-2 justify-self-start">
-              {backLink}
-              <HintButton key={state.steps} hint={card.hint} hotkey={isChoice} />
-            </div>
-            <div className="justify-self-center flex items-center gap-2">
-              {verdict === null && isChoice && selected !== null && (
-                <button onClick={confirmChoice} className="border border-indigo-400 dark:border-indigo-600 text-indigo-600 dark:text-indigo-400 px-5 py-2 rounded-xl font-medium hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-colors">
-                  Confirm
-                </button>
-              )}
-              {verdict === null && step.stage === "write" && written.trim() && (
-                <button data-testid="cram-write-check" onClick={submitWritten} className="border border-indigo-400 dark:border-indigo-600 text-indigo-600 dark:text-indigo-400 px-5 py-2 rounded-xl font-medium hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-colors">
-                  Check
-                </button>
-              )}
-              {verdict !== null && (
-                <button data-testid="cram-next" onClick={advance} className="bg-indigo-600 text-white px-6 py-2.5 rounded-xl font-medium hover:bg-indigo-700 transition-colors">
-                  Next →
-                </button>
-              )}
-            </div>
-          </div>
-
-          <p className="-mt-1 text-xs text-center text-gray-400 dark:text-slate-500 hidden sm:block">
-            {verdict !== null
-              ? "Enter to continue"
-              : isChoice
-              ? `Press 1–${step.options.length} to select · Enter to confirm`
-              : "Enter to confirm"}
-          </p>
+          ))}
         </div>
-      </main>
-    </div>
+      )}
+
+      {step.stage === "build" && (
+        <TypeAnswer
+          term={step.answer}
+          {...guided}
+          verdict={verdict === null ? null : verdict === "wrong" ? "wrong" : "right"}
+        />
+      )}
+
+      {step.stage === "write" && (
+        <TypeInput value={written} onChange={setWritten} verdict={verdict} onSubmit={submitWritten} />
+      )}
+
+      {/* The spelling is the lesson of both written stages — shown when it was missed, and
+          when a typo was let through. */}
+      {!isChoice && wrong && (
+        <p data-testid="cram-answer" className="text-center text-sm text-gray-600 dark:text-slate-300">
+          Correct answer: <span className="font-medium">{step.answer}</span>
+        </p>
+      )}
+      {verdict === "close" && (
+        <p data-testid="cram-answer" className="text-center text-sm text-amber-600 dark:text-amber-400">
+          Close enough — it&apos;s spelled <span className="font-medium">{step.answer}</span>
+        </p>
+      )}
+    </ExerciseScreen>
   );
 }

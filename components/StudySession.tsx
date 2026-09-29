@@ -2,10 +2,9 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import Navbar from "@/components/Navbar";
+import ExerciseScreen, { BackLink, ExerciseError, ExerciseLoading, ExerciseMessage } from "@/components/ExerciseScreen";
 import OptionButton from "@/components/OptionButton";
 import TypeAnswer, { useGuidedAnswer } from "@/components/TypeAnswer";
-import SpeakButton from "@/components/SpeakButton";
 import LevelDot from "@/components/LevelDot";
 import HintButton from "@/components/HintButton";
 import { api, type ProgressEntry } from "@/lib/api";
@@ -210,45 +209,17 @@ export default function StudySession({ items, collectionID, doneTitle, error, re
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [item, submitted, selected, submit, next, typingStep, answered]);
 
-  if (error) {
-    return (
-      <div className="min-h-screen flex flex-col">
-        <Navbar />
-        <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center px-4">
-          <p className="text-red-500">{error}</p>
-          <button onClick={() => window.history.back()} className="text-sm text-indigo-600 dark:text-indigo-400 hover:underline">Go back</button>
-        </div>
-      </div>
-    );
-  }
+  if (error) return <ExerciseError message={error} />;
 
-  if (queue.length === 0) {
-    return (
-      <div className="min-h-screen flex flex-col">
-        <Navbar />
-        <main className="flex-1 flex flex-col items-center justify-center px-4">
-          <div className="w-full max-w-lg flex flex-col gap-5 animate-pulse">
-            <div className="h-4 bg-gray-200 dark:bg-slate-800 rounded w-20" />
-            <div className="bg-gray-100 dark:bg-slate-800 rounded-2xl h-32" />
-            <div className="flex flex-col gap-2">
-              {[0, 1, 2, 3].map((i) => <div key={i} className="h-12 bg-gray-100 dark:bg-slate-800 rounded-xl" />)}
-            </div>
-          </div>
-        </main>
-      </div>
-    );
-  }
+  if (queue.length === 0) return <ExerciseLoading />;
 
   if (done) {
     return (
-      <div className="min-h-screen flex flex-col">
-        <Navbar />
-        <div className="flex-1 flex flex-col items-center justify-center gap-4 text-center px-4">
-          <h2 className="text-2xl font-bold">{doneTitle}</h2>
-          <p className="text-gray-500 dark:text-slate-400 text-lg">{score} / {total} correct</p>
-          <p className="text-gray-400 dark:text-slate-500 text-sm">Returning to collection…</p>
-        </div>
-      </div>
+      <ExerciseMessage>
+        <h2 className="text-2xl font-bold">{doneTitle}</h2>
+        <p className="text-gray-500 dark:text-slate-400 text-lg">{score} / {total} correct</p>
+        <p className="text-gray-400 dark:text-slate-500 text-sm">Returning to collection…</p>
+      </ExerciseMessage>
     );
   }
 
@@ -259,119 +230,91 @@ export default function StudySession({ items, collectionID, doneTitle, error, re
   const isLastStep = index + 1 >= queue.length && !willRequeue;
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <Navbar />
-      <main className="flex-1 flex flex-col items-center justify-center px-4">
-        <div className="w-full max-w-lg flex flex-col gap-5">
-          <div className="flex items-center justify-between">
-            <p className="text-sm text-gray-400 dark:text-slate-500">{index + 1} / {queue.length}</p>
-            <div className="flex items-center gap-2">
-              {loggedIn && <LevelDot level={shownLevel} nextReviewAt={nextReviewFromLevel(shownLevel)} />}
-              <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${item.badge.className}`}>
-                {item.badge.text}
-              </span>
-            </div>
+    <ExerciseScreen
+      progress={`${index + 1} / ${queue.length}`}
+      badge={item.badge}
+      meta={loggedIn && <LevelDot level={shownLevel} nextReviewAt={nextReviewFromLevel(shownLevel)} />}
+      prompt={item.question}
+      image={item.image}
+      speak={item.speakText && (item.speakText === item.question || submitted) ? item.speakText : undefined}
+      aside={<HintButton key={`${index}:${item.sourceID}`} hint={item.hint ?? ""} hotkey={!typingStep} />}
+      back={<BackLink collectionID={collectionID} />}
+      actions={<>
+        {submitted && loggedIn && !item.isRetry && (
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => handleConfidence(-1)}
+              disabled={confidenceDelta !== null}
+              title="Lower level"
+              className={`w-8 h-8 rounded-lg border text-sm font-bold transition-colors ${
+                confidenceDelta === -1
+                  ? "border-red-400 bg-red-50 text-red-600 dark:border-red-600 dark:bg-red-900/30 dark:text-red-400"
+                  : confidenceDelta !== null
+                  ? "border-gray-200 dark:border-slate-700 text-gray-300 dark:text-slate-600 cursor-not-allowed"
+                  : "border-gray-300 dark:border-slate-600 text-gray-500 dark:text-slate-400 hover:border-red-400 hover:bg-red-50 dark:hover:border-red-600 dark:hover:bg-red-900/20"
+              }`}
+            >
+              −
+            </button>
+            <button
+              onClick={() => handleConfidence(1)}
+              disabled={confidenceDelta !== null}
+              title="Raise level"
+              className={`w-8 h-8 rounded-lg border text-sm font-bold transition-colors ${
+                confidenceDelta === 1
+                  ? "border-green-400 bg-green-50 text-green-600 dark:border-green-600 dark:bg-green-900/30 dark:text-green-400"
+                  : confidenceDelta !== null
+                  ? "border-gray-200 dark:border-slate-700 text-gray-300 dark:text-slate-600 cursor-not-allowed"
+                  : "border-gray-300 dark:border-slate-600 text-gray-500 dark:text-slate-400 hover:border-green-400 hover:bg-green-50 dark:hover:border-green-600 dark:hover:bg-green-900/20"
+              }`}
+            >
+              +
+            </button>
           </div>
-
-          <div className="relative bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-2xl p-6 text-center shadow-sm flex flex-col items-center gap-4">
-            {item.speakText && (item.speakText === item.question || submitted) && (
-              <SpeakButton text={item.speakText} className="absolute top-3 right-3" />
-            )}
-            {item.image && (
-              <img src={item.image} alt="" className="max-h-40 max-w-full rounded-lg object-contain" />
-            )}
-            <p className="text-xl font-semibold text-gray-900 dark:text-slate-100">{item.question}</p>
-          </div>
-
-          {typingStep ? (
-            <div className="flex flex-col gap-2">
-              <TypeAnswer
-                term={expected}
-                {...answer}
-                verdict={submitted ? (isCorrect ? "right" : "wrong") : null}
-              />
-              {submitted && !isCorrect && (
-                <p data-testid="type-answer" className="text-center text-sm text-gray-600 dark:text-slate-300">
-                  Correct answer: <span className="font-medium">{expected}</span>
-                </p>
-              )}
-            </div>
-          ) : (
-            <div className="flex flex-col gap-2">
-              {item.options.map((opt, i) => (
-                <OptionButton
-                  key={i}
-                  index={i}
-                  text={opt.text}
-                  multi={item.multi}
-                  selected={selected.has(opt.text)}
-                  submitted={submitted}
-                  isCorrect={opt.isCorrect}
-                  explanation={opt.explanation}
-                  onClick={() => toggle(opt.text)}
-                />
-              ))}
-            </div>
+        )}
+        {!submitted && answered && (
+          <button onClick={() => submit()} className="border border-indigo-400 dark:border-indigo-600 text-indigo-600 dark:text-indigo-400 px-5 py-2 rounded-xl font-medium hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-colors">
+            Confirm
+          </button>
+        )}
+        {submitted && (
+          <button onClick={next} className="bg-indigo-600 text-white px-6 py-2.5 rounded-xl font-medium hover:bg-indigo-700 transition-colors">
+            {isLastStep ? "See results" : "Next →"}
+          </button>
+        )}
+      </>}
+      keysHint={typingStep ? "Enter to confirm" : `Press 1–${item.options.length} to select · Enter to confirm`}
+    >
+      {typingStep ? (
+        <div className="flex flex-col gap-2">
+          <TypeAnswer
+            term={expected}
+            {...answer}
+            verdict={submitted ? (isCorrect ? "right" : "wrong") : null}
+          />
+          {submitted && !isCorrect && (
+            <p data-testid="type-answer" className="text-center text-sm text-gray-600 dark:text-slate-300">
+              Correct answer: <span className="font-medium">{expected}</span>
+            </p>
           )}
-
-          <div className="flex items-center justify-between min-h-[44px]">
-            <div className="flex items-center gap-2">
-              <HintButton key={`${index}:${item.sourceID}`} hint={item.hint ?? ""} hotkey={!typingStep} />
-            </div>
-            <div className="flex items-center gap-2 ml-auto">
-              {submitted && loggedIn && !item.isRetry && (
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={() => handleConfidence(-1)}
-                    disabled={confidenceDelta !== null}
-                    title="Lower level"
-                    className={`w-8 h-8 rounded-lg border text-sm font-bold transition-colors ${
-                      confidenceDelta === -1
-                        ? "border-red-400 bg-red-50 text-red-600 dark:border-red-600 dark:bg-red-900/30 dark:text-red-400"
-                        : confidenceDelta !== null
-                        ? "border-gray-200 dark:border-slate-700 text-gray-300 dark:text-slate-600 cursor-not-allowed"
-                        : "border-gray-300 dark:border-slate-600 text-gray-500 dark:text-slate-400 hover:border-red-400 hover:bg-red-50 dark:hover:border-red-600 dark:hover:bg-red-900/20"
-                    }`}
-                  >
-                    −
-                  </button>
-                  <button
-                    onClick={() => handleConfidence(1)}
-                    disabled={confidenceDelta !== null}
-                    title="Raise level"
-                    className={`w-8 h-8 rounded-lg border text-sm font-bold transition-colors ${
-                      confidenceDelta === 1
-                        ? "border-green-400 bg-green-50 text-green-600 dark:border-green-600 dark:bg-green-900/30 dark:text-green-400"
-                        : confidenceDelta !== null
-                        ? "border-gray-200 dark:border-slate-700 text-gray-300 dark:text-slate-600 cursor-not-allowed"
-                        : "border-gray-300 dark:border-slate-600 text-gray-500 dark:text-slate-400 hover:border-green-400 hover:bg-green-50 dark:hover:border-green-600 dark:hover:bg-green-900/20"
-                    }`}
-                  >
-                    +
-                  </button>
-                </div>
-              )}
-              {!submitted && answered && (
-                <button onClick={() => submit()} className="border border-indigo-400 dark:border-indigo-600 text-indigo-600 dark:text-indigo-400 px-5 py-2 rounded-xl font-medium hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-colors">
-                  Confirm
-                </button>
-              )}
-              {submitted && (
-                <button onClick={next} className="bg-indigo-600 text-white px-6 py-2.5 rounded-xl font-medium hover:bg-indigo-700 transition-colors">
-                  {isLastStep ? "See results" : "Next →"}
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Its own centred line under the buttons: sharing the row with them left it competing
-              with the hint button for the left edge. */}
-          <p className="-mt-3 text-xs text-center text-gray-400 dark:text-slate-500 hidden sm:block">
-            {typingStep ? "Enter to confirm" : `Press 1–${item.options.length} to select · Enter to confirm`}
-          </p>
-
         </div>
-      </main>
-    </div>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {item.options.map((opt, i) => (
+            <OptionButton
+              key={i}
+              index={i}
+              text={opt.text}
+              multi={item.multi}
+              selected={selected.has(opt.text)}
+              submitted={submitted}
+              isCorrect={opt.isCorrect}
+              explanation={opt.explanation}
+              onClick={() => toggle(opt.text)}
+            />
+          ))}
+        </div>
+      )}
+    </ExerciseScreen>
   );
 }
