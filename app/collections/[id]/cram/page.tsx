@@ -4,7 +4,7 @@ import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { isLoggedIn } from "@/lib/auth";
-import ExerciseScreen, { BackLink, ExerciseError, ExerciseLoading, ExerciseMessage } from "@/components/ExerciseScreen";
+import ExerciseScreen, { BackLink, ExerciseError, ExerciseLoading, ExerciseMessage, primaryButton } from "@/components/ExerciseScreen";
 import HintButton from "@/components/HintButton";
 import OptionButton from "@/components/OptionButton";
 import TypeAnswer, { useGuidedAnswer } from "@/components/TypeAnswer";
@@ -139,9 +139,8 @@ export default function CramPage(props: PageProps<"/collections/[id]/cram">) {
   // its terms too long for the written stages.
   if (loaded && state.cards.length === 0) {
     return (
-      <ExerciseMessage>
+      <ExerciseMessage back={backLink}>
         <p className="text-gray-500 dark:text-slate-400">Nothing to cram here right now.</p>
-        {backLink}
       </ExerciseMessage>
     );
   }
@@ -150,7 +149,14 @@ export default function CramPage(props: PageProps<"/collections/[id]/cram">) {
     const total = state.cards.length;
     const result = roundVerdict(score(state), total);
     return (
-      <ExerciseMessage>
+      <ExerciseMessage
+        back={backLink}
+        actions={
+          <button data-testid="cram-go-next" onClick={goNext} className={primaryButton}>
+            Go next →
+          </button>
+        }
+      >
         <p className="text-5xl" aria-hidden>{result.emoji}</p>
         <h2 className="text-2xl font-bold">{result.title}</h2>
         <p className="text-gray-500 dark:text-slate-400 text-lg">{score(state)} / {total} clean</p>
@@ -175,12 +181,6 @@ export default function CramPage(props: PageProps<"/collections/[id]/cram">) {
           ))}
         </ul>
 
-        <div className="w-full max-w-lg grid grid-cols-[1fr_auto_1fr] items-center gap-3 mt-2">
-          <div className="justify-self-start">{backLink}</div>
-          <button data-testid="cram-go-next" onClick={goNext} className="justify-self-center bg-indigo-600 text-white px-6 py-2.5 rounded-xl font-medium hover:bg-indigo-700 transition-colors">
-            Go next →
-          </button>
-        </div>
       </ExerciseMessage>
     );
   }
@@ -216,7 +216,7 @@ export default function CramPage(props: PageProps<"/collections/[id]/cram">) {
           </button>
         )}
         {verdict !== null && (
-          <button data-testid="cram-next" onClick={advance} className="bg-indigo-600 text-white px-6 py-2.5 rounded-xl font-medium hover:bg-indigo-700 transition-colors">
+          <button data-testid="cram-next" onClick={advance} className={primaryButton}>
             Next →
           </button>
         )}

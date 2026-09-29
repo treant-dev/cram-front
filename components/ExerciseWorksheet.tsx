@@ -5,6 +5,7 @@ import { Exercise, BankExercise, ChoiceExercise, QuizExercise, api } from "@/lib
 import { segments, isCorrect, isAnswered, bankPool, gapOptions } from "@/lib/exercises";
 import OptionButton from "@/components/OptionButton";
 import { ConfirmDialog } from "@/components/Modal";
+import { primaryButton } from "@/components/ExerciseScreen";
 
 type SentenceResult = { id: string; correct: boolean; submitted: string[] };
 type Nav = { isFirst: boolean; isLast: boolean; onPrev: () => void; onNext: () => void };
@@ -41,8 +42,7 @@ const confirmBtn =
 const resetBtn =
   "px-5 py-2 rounded-xl font-medium border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors";
 // solid indigo, like the blitz "Next →" (forward action after answering)
-const nextBtn =
-  "bg-indigo-600 text-white px-5 py-2 rounded-xl font-medium hover:bg-indigo-700 transition-colors";
+const nextBtn = primaryButton;
 const navBtn =
   "text-sm font-medium px-3 py-1.5 rounded-lg text-gray-500 dark:text-slate-400 hover:text-gray-800 dark:hover:text-slate-200 transition-colors";
 
@@ -67,8 +67,8 @@ function slotColor(state: "empty" | "filled" | "correct" | "wrong"): string {
 // Bottom bar lives OUTSIDE the card (under the border).
 //   Mobile (stepper, 3 slots): [← Prev] · [Skip/Reset] · [Confirm/Next →]  — slots keep
 //     their role (right = forward action, centre = secondary), so nothing jumps.
-//   Desktop (all blocks visible, no nav): a single centred action that swaps Confirm↔Reset
-//     in place — a lone button reads best centred (no left hint to balance it like blitz).
+//   Desktop (all blocks visible, no nav): a single action on the right edge that swaps
+//     Confirm↔Reset in place — the same spot the verb takes on every exercise screen.
 function BlockActions({ checked, onConfirm, onReset, onSkip, onDone, nav, single }: {
   checked: boolean; onConfirm: () => void; onReset: () => void; onSkip?: () => void; onDone?: () => void; nav: Nav; single?: boolean;
 }) {
@@ -93,7 +93,7 @@ function BlockActions({ checked, onConfirm, onReset, onSkip, onDone, nav, single
         </div>
       </div>
       {!single && (
-        <div className="hidden sm:flex justify-center mt-3">
+        <div className="hidden sm:flex justify-end mt-3">
           {checked
             ? <button type="button" onClick={onReset} className={resetBtn}>Reset</button>
             : <button type="button" onClick={onConfirm} className={confirmBtn}>Confirm</button>}

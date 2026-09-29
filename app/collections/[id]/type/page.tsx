@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api, Card, type ProgressEntry } from "@/lib/api";
 import { isLoggedIn } from "@/lib/auth";
-import ExerciseScreen, { BackLink, ExerciseError, ExerciseLoading, ExerciseMessage } from "@/components/ExerciseScreen";
+import ExerciseScreen, { BackLink, ExerciseError, ExerciseLoading, ExerciseMessage, primaryButton } from "@/components/ExerciseScreen";
 import TypeAnswer, { useGuidedAnswer } from "@/components/TypeAnswer";
 import LevelDot from "@/components/LevelDot";
 import HintButton from "@/components/HintButton";
@@ -133,7 +133,7 @@ export default function TypePage(props: PageProps<"/collections/[id]/type">) {
       // Nothing to press until the card has ended: the letters themselves are the whole
       // interaction.
       actions={verdict !== null && (
-        <button onClick={next} className="bg-indigo-600 text-white px-6 py-2.5 rounded-xl font-medium hover:bg-indigo-700 transition-colors">
+        <button onClick={next} className={primaryButton}>
           {index + 1 >= cards.length ? "Finish" : "Next →"}
         </button>
       )}

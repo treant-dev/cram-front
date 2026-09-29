@@ -79,22 +79,37 @@ export default function ExerciseScreen({
         </div>
       </main>
 
-      {back && <div className="flex justify-center pb-10">{back}</div>}
+      {back && <BackRow>{back}</BackRow>}
     </div>
   );
 }
 
-/** A screen with one centred message on it: an error, nothing to study, a finished round. */
-export function ExerciseMessage({ children }: { children: ReactNode }) {
+/**
+ * A screen with one centred message on it: an error, nothing to study, a finished round.
+ * Laid out like an exercise underneath: the verb on the right edge, the way back at the
+ * bottom of the screen.
+ */
+export function ExerciseMessage({ children, actions, back }: { children: ReactNode; actions?: ReactNode; back?: ReactNode }) {
   return (
     <div className="min-h-screen flex flex-col">
       <Navbar />
       <main className="flex-1 flex flex-col items-center justify-center gap-4 text-center px-4 py-8">
         {children}
+        {actions && <div className="w-full max-w-lg flex items-center justify-end gap-2 mt-2">{actions}</div>}
       </main>
+      {back && <BackRow>{back}</BackRow>}
     </div>
   );
 }
+
+/** Where the way back sits on every exercise screen: the bottom, centred. */
+export function BackRow({ children }: { children: ReactNode }) {
+  return <div className="flex justify-center pb-10">{children}</div>;
+}
+
+/** The forward verb — Next, Go next, Finish — styled the same on every screen. */
+export const primaryButton =
+  "bg-indigo-600 text-white px-6 py-2.5 rounded-xl font-medium hover:bg-indigo-700 disabled:opacity-50 transition-colors";
 
 export function ExerciseError({ message }: { message: string }) {
   return (

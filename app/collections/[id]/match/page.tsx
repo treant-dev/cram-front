@@ -1,10 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
 import { api, Card } from "@/lib/api";
 import { isLoggedIn } from "@/lib/auth";
 import Navbar from "@/components/Navbar";
+import { BackLink, BackRow, ExerciseError, ExerciseMessage, primaryButton } from "@/components/ExerciseScreen";
 import { buildMatchBoard, type MatchTile } from "@/lib/match";
 
 const MISMATCH_MS = 1200; // how long a mismatched pair stays revealed before flipping back
@@ -111,28 +111,9 @@ export default function MatchPage(props: PageProps<"/collections/[id]/match">) {
     );
   };
 
-  const backLink = (
-    <div className="flex justify-center pb-10">
-      <Link
-        href={collectionID ? `/collections/${collectionID}` : "/collections"}
-        className="inline-flex items-center gap-1 text-sm font-medium px-3 py-1.5 rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors"
-      >
-        ← Back to collection
-      </Link>
-    </div>
-  );
+  const backLink = <BackLink collectionID={collectionID} />;
 
-  if (error) {
-    return (
-      <div className="min-h-screen flex flex-col">
-        <Navbar />
-        <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center px-4">
-          <p className="text-red-500">{error}</p>
-          <button onClick={() => window.history.back()} className="text-sm text-indigo-600 dark:text-indigo-400 hover:underline">Go back</button>
-        </div>
-      </div>
-    );
-  }
+  if (error) return <ExerciseError message={error} />;
 
   if (cards === null) {
     return (
@@ -149,13 +130,9 @@ export default function MatchPage(props: PageProps<"/collections/[id]/match">) {
 
   if (tiles.length < 10) {
     return (
-      <div className="min-h-screen flex flex-col">
-        <Navbar />
-        <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center px-4">
-          <p className="text-gray-500 dark:text-slate-400">The matching game needs at least 5 cards.</p>
-          <Link href={collectionID ? `/collections/${collectionID}` : "/collections"} className="text-sm text-indigo-600 dark:text-indigo-400 hover:underline">Back to collection</Link>
-        </div>
-      </div>
+      <ExerciseMessage back={backLink}>
+        <p className="text-gray-500 dark:text-slate-400">The matching game needs at least 5 cards.</p>
+      </ExerciseMessage>
     );
   }
 
@@ -175,7 +152,7 @@ export default function MatchPage(props: PageProps<"/collections/[id]/match">) {
         {solved && (
           <div className="mb-4 rounded-xl border border-green-300 dark:border-green-700 bg-green-50 dark:bg-green-900/20 px-4 py-3 flex items-center justify-between gap-3">
             <p className="text-green-700 dark:text-green-300 font-medium">Solved in {moves} moves! 🎉</p>
-            <button onClick={restart} className="text-sm font-medium px-3 py-1.5 rounded-lg bg-green-600 text-white hover:bg-green-700 transition-colors">Play again</button>
+            <button onClick={restart} className={primaryButton}>Play again</button>
           </div>
         )}
 
@@ -192,7 +169,7 @@ export default function MatchPage(props: PageProps<"/collections/[id]/match">) {
           </div>
         </div>
       </main>
-      {backLink}
+      <BackRow>{backLink}</BackRow>
     </div>
   );
 }

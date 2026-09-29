@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import ExerciseScreen, { BackLink, ExerciseError, ExerciseLoading, ExerciseMessage } from "@/components/ExerciseScreen";
+import ExerciseScreen, { BackLink, ExerciseError, ExerciseLoading, ExerciseMessage, primaryButton } from "@/components/ExerciseScreen";
 import OptionButton from "@/components/OptionButton";
 import TypeAnswer, { useGuidedAnswer } from "@/components/TypeAnswer";
 import LevelDot from "@/components/LevelDot";
@@ -278,7 +278,7 @@ export default function StudySession({ items, collectionID, doneTitle, error, re
           </button>
         )}
         {submitted && (
-          <button onClick={next} className="bg-indigo-600 text-white px-6 py-2.5 rounded-xl font-medium hover:bg-indigo-700 transition-colors">
+          <button onClick={next} className={primaryButton}>
             {isLastStep ? "See results" : "Next →"}
           </button>
         )}
