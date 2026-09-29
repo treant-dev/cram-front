@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api, Exercise } from "@/lib/api";
 import { isLoggedIn } from "@/lib/auth";
 import Navbar from "@/components/Navbar";
+import { BackLink, BackRow } from "@/components/ExerciseScreen";
 import ExerciseWorksheet from "@/components/ExerciseWorksheet";
 
 // Interactive exercise session (like /blitz): work through the collection's exercises.
@@ -53,14 +53,7 @@ export default function ExercisesPage(props: PageProps<"/collections/[id]/exerci
         )}
       </main>
       {/* Back link lives at the bottom, centered, so it doesn't crowd the session header. */}
-      <div className="flex justify-center pb-10">
-        <Link
-          href={collectionID ? `/collections/${collectionID}` : "/collections"}
-          className="inline-flex items-center gap-1 text-sm font-medium px-3 py-1.5 rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors"
-        >
-          ← Back to collection
-        </Link>
-      </div>
+      <BackRow><BackLink collectionID={collectionID} /></BackRow>
     </div>
   );
 }

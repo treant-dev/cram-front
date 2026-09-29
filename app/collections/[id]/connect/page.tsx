@@ -1,10 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import Link from "next/link";
 import { api, Card } from "@/lib/api";
 import { isLoggedIn } from "@/lib/auth";
 import Navbar from "@/components/Navbar";
+import { BackLink, BackRow, ExerciseError, ExerciseMessage, primaryButton } from "@/components/ExerciseScreen";
 import { buildConnectBoard, type ConnectTile } from "@/lib/connect";
 
 const cardIdOf = (tileId: string) => tileId.split(":")[0];
@@ -121,28 +121,9 @@ export default function ConnectPage(props: PageProps<"/collections/[id]/connect"
     }
   }
 
-  // Leaving is one of the two things worth doing at the foot of a board, so it sits with the
-  // other one rather than alone at the bottom of the page.
-  const backLink = (
-    <Link
-      href={collectionID ? `/collections/${collectionID}` : "/collections"}
-      className="inline-flex items-center gap-1 text-sm font-medium px-5 py-2 rounded-xl border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors"
-    >
-      ← Back to collection
-    </Link>
-  );
+  const backLink = <BackLink collectionID={collectionID} confirm={!checked} />;
 
-  if (error) {
-    return (
-      <div className="min-h-screen flex flex-col">
-        <Navbar />
-        <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center px-4">
-          <p className="text-red-500">{error}</p>
-          <button onClick={() => window.history.back()} className="text-sm text-indigo-600 dark:text-indigo-400 hover:underline">Go back</button>
-        </div>
-      </div>
-    );
-  }
+  if (error) return <ExerciseError message={error} />;
 
   if (cards === null) {
     return (
@@ -159,13 +140,9 @@ export default function ConnectPage(props: PageProps<"/collections/[id]/connect"
 
   if (terms.length < 2) {
     return (
-      <div className="min-h-screen flex flex-col">
-        <Navbar />
-        <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center px-4">
-          <p className="text-gray-500 dark:text-slate-400">Connect needs at least 2 cards.</p>
-          <Link href={collectionID ? `/collections/${collectionID}` : "/collections"} className="text-sm text-indigo-600 dark:text-indigo-400 hover:underline">Back to collection</Link>
-        </div>
-      </div>
+      <ExerciseMessage back={<BackLink collectionID={collectionID} confirm={false} />}>
+        <p className="text-gray-500 dark:text-slate-400">Connect needs at least 2 cards.</p>
+      </ExerciseMessage>
     );
   }
 
@@ -228,20 +205,18 @@ export default function ConnectPage(props: PageProps<"/collections/[id]/connect"
           </div>
         </div>
 
-        {/* Leaving on the left, the one thing to press in the middle — the same footing as cram. */}
-        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 mt-6 pb-10">
-          <div className="justify-self-start">{backLink}</div>
-          <div className="justify-self-center">
+        {/* The verb on the right edge, the way back at the bottom — the same footing as cram. */}
+        <div className="flex items-center justify-end mt-6">
           {checked ? (
             // Nothing to redo: the answers are on the board. The only move left is another
             // board, dealt from the collection the same way this one was.
-            <button onClick={restart} className="bg-indigo-600 text-white px-5 py-2 rounded-xl font-medium hover:bg-indigo-700 transition-colors">Go next →</button>
+            <button onClick={restart} className={primaryButton}>Go next →</button>
           ) : (
-            <button onClick={check} disabled={!allConnected} className="bg-indigo-600 text-white px-5 py-2 rounded-xl font-medium hover:bg-indigo-700 disabled:opacity-50 transition-colors">Check</button>
+            <button onClick={check} disabled={!allConnected} className={primaryButton}>Check</button>
           )}
-          </div>
         </div>
       </main>
+      <BackRow>{backLink}</BackRow>
     </div>
   );
 }

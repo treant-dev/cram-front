@@ -128,7 +128,21 @@ describe("a clean round", () => {
 
   it("reports every card as a plain correct answer", () => {
     const { state } = play(start(cards), () => false);
-    expect(state.emit).toEqual(cards.map((c) => ({ cardID: c.id, correct: true })));
+    expect(state.emit).toEqual(expect.arrayContaining(cards.map((c) => ({ cardID: c.id, correct: true }))));
+    expect(state.emit).toHaveLength(cards.length);
+  });
+
+  it("deals the cards in a new order at each stage", () => {
+    const { trail } = play(start(cards), () => false);
+    const orders = STAGES.map((_, i) =>
+      trail.slice(i * cards.length, (i + 1) * cards.length).map((t) => t.cardID).join(","),
+    );
+    expect(new Set(orders).size).toBeGreaterThan(1);
+  });
+
+  it("never asks the same card twice running while another is waiting", () => {
+    const { trail } = play(start(cards), () => false);
+    for (let i = 1; i < trail.length; i++) expect(trail[i].cardID).not.toBe(trail[i - 1].cardID);
   });
 });
 
@@ -144,12 +158,15 @@ describe("a failure", () => {
   };
 
   it("drops the card back one stage, and it waits for the retry phase", () => {
-    const { trail } = play(start(cards), failOnce("c1", "write"));
-    const c1 = trail.filter((t) => t.cardID === "c1").map((t) => t.stage);
-    expect(c1).toEqual(["recall", "produce", "build", "write", "build", "write"]);
+    // The card asked first at the written stage, so the rest of that stage is still to come.
+    const clean = play(start(cards), () => false).trail;
+    const first = clean.find((t) => t.stage === "write")!.cardID;
+    const { trail } = play(start(cards), failOnce(first, "write"));
+    const stages = trail.filter((t) => t.cardID === first).map((t) => t.stage);
+    expect(stages).toEqual(["recall", "produce", "build", "write", "build", "write"]);
     // The failed step is not repeated on the spot: the rest of the stage runs first.
-    const failedAt = trail.findIndex((t) => t.cardID === "c1" && !t.right);
-    expect(trail[failedAt + 1].cardID).not.toBe("c1");
+    const failedAt = trail.findIndex((t) => t.cardID === first && !t.right);
+    expect(trail[failedAt + 1].cardID).not.toBe(first);
   });
 
   it("keeps a card that fails the first stage on the first stage", () => {
@@ -221,12 +238,13 @@ describe("the safety valve", () => {
 
 describe("cramReducer guards", () => {
   const state = start([cramCard(1), cramCard(2)]);
+  const asked = (s: CramState) => s.cards.find((c) => c.card.id === state.step!.cardID)!;
 
   it("ignores a second answer while the verdict is on screen", () => {
     const answered = cramReducer(state, { type: "answer", verdict: "wrong" });
     const again = cramReducer(answered, { type: "answer", verdict: "wrong" });
     expect(again).toBe(answered);
-    expect(again.cards[0].failures).toBe(1);
+    expect(asked(again).failures).toBe(1);
   });
 
   it("ignores a step forward before the answer is in", () => {
@@ -235,8 +253,8 @@ describe("cramReducer guards", () => {
 
   it("counts a tolerated typo as a pass", () => {
     const answered = cramReducer(state, { type: "answer", verdict: "close" });
-    expect(answered.cards[0].failures).toBe(0);
-    expect(answered.cards[0].stage).toBe(1);
+    expect(asked(answered).failures).toBe(0);
+    expect(asked(answered).stage).toBe(1);
   });
 
   it("is done before it starts when nothing is eligible", () => {

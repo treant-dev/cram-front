@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { api, Card } from "@/lib/api";
 import { isLoggedIn } from "@/lib/auth";
 import Navbar from "@/components/Navbar";
+import { BackLink, BackRow, ExerciseError, ExerciseMessage, primaryButton } from "@/components/ExerciseScreen";
 import SpeakButton from "@/components/SpeakButton";
 
 export default function CardsPage(props: PageProps<"/collections/[id]/cards">) {
@@ -53,17 +54,7 @@ export default function CardsPage(props: PageProps<"/collections/[id]/cards">) {
     return () => window.removeEventListener("keydown", onKey);
   }, [flip, next]);
 
-  if (error) {
-    return (
-      <div className="min-h-screen flex flex-col">
-        <Navbar />
-        <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center px-4">
-          <p className="text-red-500">{error}</p>
-          <button onClick={() => window.history.back()} className="text-sm text-indigo-600 dark:text-indigo-400 hover:underline">Go back</button>
-        </div>
-      </div>
-    );
-  }
+  if (error) return <ExerciseError message={error} />;
 
   if (cards.length === 0) {
     return (
@@ -80,13 +71,10 @@ export default function CardsPage(props: PageProps<"/collections/[id]/cards">) {
 
   if (done) {
     return (
-      <div className="min-h-screen flex flex-col">
-        <Navbar />
-        <div className="flex-1 flex flex-col items-center justify-center gap-4 text-center px-4">
-          <h2 className="text-2xl font-bold">Round complete!</h2>
-          <p className="text-gray-500 dark:text-slate-400">{cards.length} cards reviewed</p>
-        </div>
-      </div>
+      <ExerciseMessage>
+        <h2 className="text-2xl font-bold">Round complete!</h2>
+        <p className="text-gray-500 dark:text-slate-400">{cards.length} cards reviewed</p>
+      </ExerciseMessage>
     );
   }
 
@@ -130,17 +118,15 @@ export default function CardsPage(props: PageProps<"/collections/[id]/cards">) {
             </div>
           )}
 
-          <div className="flex items-center justify-between">
-            <p className="text-xs text-gray-400 dark:text-slate-500">Space to flip · Enter for next</p>
-            <button
-              onClick={next}
-              className="bg-indigo-600 text-white px-4 py-1.5 rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors"
-            >
+          <div className="flex items-center justify-end min-h-[44px]">
+            <button onClick={next} className={primaryButton}>
               {index + 1 >= cards.length ? "Finish" : "Next →"}
             </button>
           </div>
+          <p className="-mt-1 text-xs text-center text-gray-400 dark:text-slate-500 hidden sm:block">Space to flip · Enter for next</p>
         </div>
       </main>
+      <BackRow><BackLink collectionID={collectionID} /></BackRow>
     </div>
   );
 }

@@ -144,10 +144,16 @@ export default function TypeAnswer({ term, letters, onChange, onMistake, mistake
         data-testid="type-slots"
         role="group"
         aria-label="Answer"
-        className="flex flex-wrap items-end justify-center gap-x-1 gap-y-2 px-2 min-h-11"
+        className="flex flex-wrap items-end justify-center gap-x-4 gap-y-2 px-2 min-h-11"
       >
-        {slots.map((slot, i) => (
-          <SlotBox key={i} slot={slot} char={letterAt(slots, typed, i)} active={i === cursor} tint={tint} />
+        {/* A line breaks between words, never inside one: each word is its own unbreakable
+            group, and the space between words is the gap between groups. */}
+        {wordsOf(slots).map((word) => (
+          <span key={word[0]} className="inline-flex flex-nowrap items-end gap-x-1">
+            {word.map((i) => (
+              <SlotBox key={i} slot={slots[i]} char={letterAt(slots, typed, i)} active={i === cursor} tint={tint} />
+            ))}
+          </span>
         ))}
       </div>
 
@@ -205,6 +211,22 @@ export default function TypeAnswer({ term, letters, onChange, onMistake, mistake
   );
 }
 
+/** Slot indices grouped by word, split on spaces; the spaces themselves are left out. */
+function wordsOf(slots: Slot[]): number[][] {
+  const words: number[][] = [];
+  let word: number[] = [];
+  slots.forEach((slot, i) => {
+    if (!slot.fill && slot.char === " ") {
+      if (word.length) words.push(word);
+      word = [];
+    } else {
+      word.push(i);
+    }
+  });
+  if (word.length) words.push(word);
+  return words;
+}
+
 /** The letter sitting in slot `i`, or "" while that blank is still empty. */
 function letterAt(slots: Slot[], typed: string[], i: number): string {
   if (!slots[i].fill) return slots[i].char;
@@ -214,9 +236,6 @@ function letterAt(slots: Slot[], typed: string[], i: number): string {
 }
 
 function SlotBox({ slot, char, active, tint }: { slot: Slot; char: string; active: boolean; tint: string }) {
-  // A space is the gap between words — drawn as blank room rather than as a character, so
-  // "der Löffel" reads as two words at a glance.
-  if (!slot.fill && slot.char === " ") return <span className="w-4" />;
   if (!slot.fill) {
     return <span className="w-4 text-center text-lg text-gray-400 dark:text-slate-500 leading-9">{slot.char}</span>;
   }
