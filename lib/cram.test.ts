@@ -283,8 +283,8 @@ describe("normalizeAnswer", () => {
 });
 
 describe("acceptedAnswers", () => {
-  it("takes either side of an alternative, and a parenthetical either way", () => {
-    expect(acceptedAnswers("lift / elevator").sort()).toEqual(["elevator", "lift"]);
+  it("takes the term as written, and a parenthetical either way", () => {
+    expect(acceptedAnswers("be/get bogged down")).toEqual(["be/get bogged down"]);
     expect(acceptedAnswers("(to) run").sort()).toEqual(["run", "to run"]);
   });
 });
@@ -293,7 +293,7 @@ describe("gradeWritten", () => {
   it("passes the word however it was capitalised or accented", () => {
     expect(gradeWritten("GOROUTINE", "goroutine")).toBe("right");
     expect(gradeWritten("loffel", "Löffel")).toBe("right");
-    expect(gradeWritten("elevator", "lift / elevator")).toBe("right");
+    expect(gradeWritten("be/get bogged down", "be/get bogged down")).toBe("right");
     expect(gradeWritten("run", "(to) run")).toBe("right");
   });
 

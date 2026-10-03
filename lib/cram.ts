@@ -374,19 +374,16 @@ export function normalizeAnswer(text: string): string {
 }
 
 /**
- * Every spelling a card would accept: alternatives written as "lift / elevator" are each an
- * answer on their own, and a parenthetical is optional — "(to) run" is answered by "to run"
- * and by "run".
+ * Every spelling a card would accept: the term as written, with a parenthetical optional —
+ * "(to) run" is answered by "to run" and by "run".
  */
 export function acceptedAnswers(term: string): string[] {
   const out = new Set<string>();
-  for (const part of term.split(/[/|]/)) {
-    const withParens = part.replace(/[()]/g, " ");
-    const withoutParens = part.replace(/\([^)]*\)/g, " ");
-    for (const variant of [withParens, withoutParens]) {
-      const key = normalizeAnswer(variant);
-      if (key) out.add(key);
-    }
+  const withParens = term.replace(/[()]/g, " ");
+  const withoutParens = term.replace(/\([^)]*\)/g, " ");
+  for (const variant of [withParens, withoutParens]) {
+    const key = normalizeAnswer(variant);
+    if (key) out.add(key);
   }
   return [...out];
 }
